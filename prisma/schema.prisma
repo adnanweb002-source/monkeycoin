@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Position {
+  LEFT
+  RIGHT
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id             Int       @id @default(autoincrement())
+  memberId       String    @unique @map("member_id")
+  username       String    @unique
+  email          String    @unique
+  passwordHash   String    @map("password_hash")
+  sponsorId      Int?      @map("sponsor_id")
+  parentId       Int?      @map("parent_id")
+  position       Position? @default(LEFT)
+  status         Status    @default(ACTIVE)
+  rankId         Int?      @map("rank_id")
+  leftBv         Decimal   @default(0) @map("left_bv")
+  rightBv        Decimal   @default(0) @map("right_bv")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  g2faSecret     String
+  isG2faEnabled  Boolean
+
+  // self relations
+  sponsor        User?      @relation("UserSponsor", fields: [sponsorId], references: [id])
+  sponsoredUsers User[]     @relation("UserSponsor") //
+}
+
+model TwoFactorSecret {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  secretEnc    String   // encrypted secret (store encrypted using KMS/Vault in practice)
+  createdAt    DateTime @default(now()) @map("created_at")
+  enabled      Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("two_factor_secrets")
+}
+
+model RefreshToken {
+  id         Int      @id @default(autoincrement())
+  tokenHash  String   @unique
+  userId     Int
+  revoked    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("refresh_tokens")
+}
+
+// Roles for RBAC
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  users User[] @relation("UserRole") // opposite side defined above in User.roles
+  @@map("roles")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?     // admin or user who performed action
+  actorType  String?  // "user" or "admin" or "system"
+  action     String   // e.g., "2FA_RESET_ADMIN", "EMAIL_CHANGE", "PASSWORD_CHANGE"
+  entity     String?  // e.g., "User"
+  entityId   Int?     // affected entity
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditByUser", fields: [actorId], references: [id])
+
+  @@map("audit_logs")
+}

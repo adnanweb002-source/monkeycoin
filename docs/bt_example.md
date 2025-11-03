@@ -135,5 +135,3 @@ flowchart TD
 | 5    | U5   | Auto           | U1     | RIGHT    |
 
 ---
-
-### 💡 Tips for Doc Integration

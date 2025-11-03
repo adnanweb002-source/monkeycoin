@@ -137,11 +137,3 @@ flowchart TD
 ---
 
 ### 💡 Tips for Doc Integration
-
-* If using **GitHub or Docusaurus**, this works out of the box with `mermaid.js`.
-* If using **Obsidian**, ensure `Mermaid plugin` is enabled and set `Diagram type: Flowchart`.
-* You can animate this sequence by splitting each step into tabs or using `:::note` blocks per level.
-
----
-
-Would you like me to combine this into a single **animated-style flow (step-by-step in one Mermaid diagram)** — i.e., showing all placements dynamically in one visual (great for presentations)?

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//
+// ────────────────────────────────────────────────
+// ENUMS
+// ────────────────────────────────────────────────
+//
+
 enum Position {
   LEFT
   RIGHT
@@ -18,41 +24,99 @@ enum Status {
   SUSPENDED
 }
 
+enum WalletType {
+  F_WALLET      // Deposit wallet
+  I_WALLET      // Referral / Binary Income
+  M_WALLET      // ROI income
+  BONUS_WALLET  // Rewards
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAW
+  TRANSFER_IN
+  TRANSFER_OUT
+  PACKAGE_PURCHASE
+  BINARY_INCOME
+  DIRECT_INCOME
+  ROI_CREDIT
+  RANK_REWARD
+  ADJUSTMENT
+}
+
+//
+// ────────────────────────────────────────────────
+// USER MODEL
+// ────────────────────────────────────────────────
+//
+
 model User {
   id             Int       @id @default(autoincrement())
   memberId       String    @unique @map("member_id")
   username       String    @unique
   email          String    @unique
   passwordHash   String    @map("password_hash")
+
   sponsorId      Int?      @map("sponsor_id")
   parentId       Int?      @map("parent_id")
   position       Position? @default(LEFT)
+
   status         Status    @default(ACTIVE)
   rankId         Int?      @map("rank_id")
+
   leftBv         Decimal   @default(0) @map("left_bv")
   rightBv        Decimal   @default(0) @map("right_bv")
+
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   g2faSecret     String
   isG2faEnabled  Boolean
 
-  // self relations
-  sponsor        User?      @relation("UserSponsor", fields: [sponsorId], references: [id])
-  sponsoredUsers User[]     @relation("UserSponsor") //
+  // Self-relations (binary tree)
+  sponsor        User?     @relation("UserSponsor", fields: [sponsorId], references: [id])
+  sponsoredUsers User[]    @relation("UserSponsor")
+
+  parent         User?     @relation("UserParent", fields: [parentId], references: [id])
+  children       User[]    @relation("UserParent")
+
+  // Relations
+  twoFactorSecret TwoFactorSecret?
+  refreshTokens   RefreshToken[]
+  roles           Role[]     @relation("UserRole")
+  auditLogs       AuditLog[] @relation("AuditByUser")
+
+  // Wallet relations
+  wallets         Wallet[]
+  walletTxns      WalletTransaction[]
+  withdrawalRequests WithdrawalRequest[]
+
+  @@map("users")
 }
 
+//
+// ────────────────────────────────────────────────
+// TWO-FACTOR AUTH MODEL
+// ────────────────────────────────────────────────
+//
+
 model TwoFactorSecret {
-  id           Int      @id @default(autoincrement())
-  userId       Int      @unique
-  secretEnc    String   // encrypted secret (store encrypted using KMS/Vault in practice)
-  createdAt    DateTime @default(now()) @map("created_at")
-  enabled      Boolean  @default(false)
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique
+  secretEnc  String
+  createdAt  DateTime @default(now()) @map("created_at")
+  enabled    Boolean  @default(false)
 
   user User @relation(fields: [userId], references: [id])
 
   @@map("two_factor_secrets")
 }
+
+//
+// ────────────────────────────────────────────────
+// REFRESH TOKENS (JWT)
+// ────────────────────────────────────────────────
+//
 
 model RefreshToken {
   id         Int      @id @default(autoincrement())
@@ -67,21 +131,34 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// Roles for RBAC
+//
+// ────────────────────────────────────────────────
+// ROLES
+// ────────────────────────────────────────────────
+//
+
 model Role {
   id    Int    @id @default(autoincrement())
   name  String @unique
-  users User[] @relation("UserRole") // opposite side defined above in User.roles
+
+  users User[] @relation("UserRole")
+
   @@map("roles")
 }
 
+//
+// ────────────────────────────────────────────────
+// AUDIT LOGS
+// ────────────────────────────────────────────────
+//
+
 model AuditLog {
   id         Int      @id @default(autoincrement())
-  actorId    Int?     // admin or user who performed action
-  actorType  String?  // "user" or "admin" or "system"
-  action     String   // e.g., "2FA_RESET_ADMIN", "EMAIL_CHANGE", "PASSWORD_CHANGE"
-  entity     String?  // e.g., "User"
-  entityId   Int?     // affected entity
+  actorId    Int?
+  actorType  String?
+  action     String
+  entity     String?
+  entityId   Int?
   before     Json?
   after      Json?
   ip         String?
@@ -90,4 +167,80 @@ model AuditLog {
   actor User? @relation("AuditByUser", fields: [actorId], references: [id])
 
   @@map("audit_logs")
+}
+
+//
+// ────────────────────────────────────────────────
+// WALLETS
+// ────────────────────────────────────────────────
+//
+
+model Wallet {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  type       WalletType
+  balance    Decimal    @default(0)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  user         User              @relation(fields: [userId], references: [id])
+  transactions WalletTransaction[]
+  withdrawalRequests WithdrawalRequest[]
+
+  @@unique([userId, type])
+  @@map("wallets")
+}
+
+//
+// ────────────────────────────────────────────────
+// WALLET TRANSACTIONS (LEDGER)
+// ────────────────────────────────────────────────
+//
+
+model WalletTransaction {
+  id            Int            @id @default(autoincrement())
+  walletId      Int
+  userId        Int
+  type          TransactionType
+  amount        Decimal
+  direction     String          // "CREDIT" or "DEBIT"
+  purpose       String?
+  balanceAfter  Decimal         @map("balance_after")
+  txNumber      String          @unique @map("tx_no")
+  meta          Json?
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([walletId])
+  @@map("wallet_transactions")
+}
+
+model WithdrawalRequest {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  walletId   Int
+  amount     Decimal
+  method     String
+  address    String?
+  status     String   @default("PENDING") // PENDING / APPROVED / REJECTED / FAILED
+  adminNote  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@map("withdrawal_requests")
+}
+
+model AdminSetting {
+  id        Int     @id @default(autoincrement())
+  key       String  @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("admin_settings")
 }

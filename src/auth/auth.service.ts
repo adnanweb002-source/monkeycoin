@@ -5,8 +5,9 @@ import * as argon2 from 'argon2';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { LoginDto } from './dto/login.dto';
-import { Prisma } from '@prisma/client';
 import { TwoFactorService } from './twofactor.service';
+import { WalletService } from 'src/wallets/wallet.service';
+import { WalletType, TransactionType } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -15,6 +16,7 @@ export class AuthService {
     private jwtService: JwtService,
     private cfg: ConfigService,
     private twoFactor: TwoFactorService,
+    private walletService: WalletService,
   ) {}
 
   private async hashPassword(password: string) {
@@ -25,58 +27,142 @@ export class AuthService {
     return argon2.verify(hash, password);
   }
 
-  async  register(dto: RegisterDto, ip: string) {
-    // Basic uniqueness checks
+  async register(dto: RegisterDto, ip: string) {
+    const { username, email, password, sponsorMemberId, parentMemberId, position } = dto;
+
+    // -----------------------------
+    // 1. Unique Check
+    // -----------------------------
     const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email: dto.email }, { username: dto.username }],
-      },
+      where: { OR: [{ email }, { username }] },
     });
+
     if (existing) {
       throw new ConflictException('Email or username already in use');
     }
 
-    const passwordHash = await this.hashPassword(dto.password);
+    // -----------------------------
+    // 2. Hash Password
+    // -----------------------------
+    const passwordHash = await this.hashPassword(password);
 
-    // TODO: validate sponsor/parent existence, placement logic; for now accept optional sponsor/parent.
+    // -----------------------------
+    // 3. Resolve Sponsor
+    // -----------------------------
+    let sponsorId: number;
 
-    if (dto.sponsorMemberId) {
-      const sponsor = await this.prisma.user.findUnique({ where: { memberId: dto.sponsorMemberId } });
+    if (sponsorMemberId) {
+      const sponsor = await this.prisma.user.findUnique({
+        where: { memberId: sponsorMemberId },
+      });
       if (!sponsor) throw new BadRequestException('Invalid sponsorMemberId');
+      sponsorId = sponsor.id;
+    } else {
+      sponsorId = 1; // COMPANY ROOT
     }
-    if (dto.parentMemberId) {
-      const parent = await this.prisma.user.findUnique({ where: { memberId: dto.parentMemberId } });
+
+    // -----------------------------
+    // 4. Resolve Parent
+    // -----------------------------
+    let parentId: number;
+    const finalPosition = (position ?? 'RIGHT') as 'LEFT' | 'RIGHT';
+
+    if (parentMemberId) {
+      const parent = await this.prisma.user.findUnique({
+        where: { memberId: parentMemberId },
+      });
       if (!parent) throw new BadRequestException('Invalid parentMemberId');
+
+      parentId = parent.id;
+    } else {
+      parentId = 1; // COMPANY ROOT
     }
 
-    const user = await this.prisma.user.create({
-      data: {
-        memberId: `M${Date.now()}`, // or use more robust generator
-        username: dto.username,
-        email: dto.email,
-        passwordHash,
-        sponsorId: dto.sponsorMemberId ? (await this.prisma.user.findUnique({ where: { memberId: dto.sponsorMemberId } }))?.id : null,
-        parentId: dto.parentMemberId ? (await this.prisma.user.findUnique({ where: { memberId: dto.parentMemberId } }))?.id : null,
-        // For simplicity, not implementing full binary tree placement logic here
-        // In real system, would need to find correct position in tree
-        position: dto.position || 'LEFT',
+    // -----------------------------
+    // 5. Check if slot is already filled
+    // -----------------------------
+    const slotTaken = await this.prisma.user.findFirst({
+      where: {
+        parentId,
+        position: finalPosition,
       },
     });
 
-    // Audit
-    await this.prisma.auditLog.create({
-      data: {
-        actorId: user.id,
-        actorType: 'user',
-        action: 'REGISTER',
-        entity: 'User',
-        entityId: user.id,
-        ip,
-        after: Prisma.JsonNull, // optionally include created user details; careful with sensitive data
-      },
+    if (slotTaken) {
+      throw new BadRequestException(
+        `Position ${finalPosition} under parent ${parentMemberId ?? 'COMPANY(1)'} is already occupied.`,
+      );
+    }
+
+    // -----------------------------
+    // 6. Transaction (User + Wallets + Audit)
+    // -----------------------------
+    const result = await this.prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          memberId: `M${Date.now()}`,
+          username,
+          email,
+          passwordHash,
+          sponsorId,
+          parentId,
+          position: finalPosition,
+          status: 'INACTIVE',
+
+          // Ensure these exist in your Prisma schema (you have them)
+          g2faSecret: '',
+          isG2faEnabled: false,
+        },
+      });
+
+      // Create 4 Wallets
+      this.walletService.createWalletsForUser(newUser.id);
+
+      
+      // ➜ REFERRAL BONUS
+      if (sponsorId && sponsorId !== 1) {
+        const bonus = Number(this.cfg.get('REFERRAL_BONUS') ?? 0);
+
+        if (bonus > 0) {
+          await this.walletService.creditWallet({
+            userId: sponsorId,
+            walletType: WalletType.I_WALLET,
+            amount: bonus.toString(),
+            txType: TransactionType.BINARY_INCOME,
+            purpose: `Referral bonus from ${newUser.memberId}`,
+            meta: { fromUserId: newUser.id, fromMemberId: newUser.memberId },
+          }
+          );
+        }
+      }
+
+      // Audit Log
+      await tx.auditLog.create({
+        data: {
+          actorId: newUser.id,
+          actorType: 'user',
+          action: 'REGISTER',
+          entity: 'User',
+          entityId: newUser.id,
+          ip,
+          after: { created: true },
+        },
+      });
+
+      return newUser;
     });
 
-    return { id: user.id, memberId: user.memberId, username: user.username };
+    // -----------------------------
+    // 7. Return Response
+    // -----------------------------
+    return {
+      id: result.id,
+      memberId: result.memberId,
+      username: result.username,
+      sponsorId,
+      parentId,
+      position: finalPosition,
+    };
   }
 
   async login(dto: LoginDto, ip: string) {
@@ -84,7 +170,7 @@ export class AuthService {
       where: {
         OR: [{ email: dto.usernameOrEmail }, { username: dto.usernameOrEmail }],
       },
-      include: { twoFactor: true },
+      include: { twoFactorSecret: true }, // corrected
     });
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
@@ -92,9 +178,9 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
     // If 2FA enabled, verify code
-    if (user.twoFactor && user.twoFactor.enabled) {
+    if (user.twoFactorSecret && user.twoFactorSecret.enabled) {
       if (!dto.code) throw new UnauthorizedException('2FA code required');
-      const verified = this.twoFactor.verifyCode(user.twoFactor.secretEnc, dto.code);
+      const verified = this.twoFactor.verifyCode(user.twoFactorSecret.secretEnc, dto.code);
       if (!verified) throw new UnauthorizedException('Invalid 2FA code');
     }
 
@@ -155,7 +241,7 @@ export class AuthService {
       // Find token by comparing hash
       const tokens = await this.prisma.refreshToken.findMany({ where: { userId, revoked: false } });
 
-      let match:any = null;
+      let match: any = null;
       for (const t of tokens) {
         try {
           const ok = await argon2.verify(t.tokenHash, refreshToken);
@@ -193,15 +279,15 @@ export class AuthService {
   }
 
   async changePassword(userId: number, dto: any, ip: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { twoFactor: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { twoFactorSecret: true } });
     if (!user) throw new UnauthorizedException('User not found');
 
     const ok = await this.verifyPassword(user.passwordHash, dto.oldPassword);
     if (!ok) throw new UnauthorizedException('Old password incorrect');
 
     // verify 2FA
-    if (user.twoFactor && user.twoFactor.enabled) {
-      const verified = this.twoFactor.verifyCode(user.twoFactor.secretEnc, dto.twoFactorCode);
+    if (user.twoFactorSecret && user.twoFactorSecret.enabled) {
+      const verified = this.twoFactor.verifyCode(user.twoFactorSecret.secretEnc, dto.twoFactorCode);
       if (!verified) throw new UnauthorizedException('Invalid 2FA code');
     }
 
@@ -226,12 +312,12 @@ export class AuthService {
   }
 
   async changeEmail(userId: number, dto: any, ip: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { twoFactor: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { twoFactorSecret: true } });
     if (!user) throw new UnauthorizedException('User not found');
 
     // verify 2FA
-    if (user.twoFactor && user.twoFactor.enabled) {
-      const verified = this.twoFactor.verifyCode(user.twoFactor.secretEnc, dto.twoFactorCode);
+    if (user.twoFactorSecret && user.twoFactorSecret.enabled) {
+      const verified = this.twoFactor.verifyCode(user.twoFactorSecret.secretEnc, dto.twoFactorCode);
       if (!verified) throw new UnauthorizedException('Invalid 2FA code');
     }
 

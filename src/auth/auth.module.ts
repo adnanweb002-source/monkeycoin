@@ -9,11 +9,13 @@ import { LocalStrategy } from './local.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailService } from './mail.service';
 import { TwoFactorService } from './twofactor.service';
+import { WalletModule } from '../wallets/wallet.module';
 
 @Global()
 @Module({
   imports: [
     PassportModule,
+    WalletModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

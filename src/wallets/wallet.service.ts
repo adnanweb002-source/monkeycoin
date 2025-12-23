@@ -1,25 +1,35 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { generateTxNumber } from './utils';
 import Decimal from 'decimal.js';
 import { Prisma } from '@prisma/client';
 import { TransactionType } from '@prisma/client';
 import { WalletType } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class WalletService {
   constructor(private prisma: PrismaService) {}
 
   // create 4 wallets for a user (call during registration)
-  async createWalletsForUser(userId: number) {
+  async createWalletsForUser(
+    tx: PrismaClient | Prisma.TransactionClient,
+    userId: number,
+  ) {
     const data = [
-    { userId, type: WalletType.F_WALLET },
-    { userId, type: WalletType.I_WALLET },
-    { userId, type: WalletType.M_WALLET },
-    { userId, type: WalletType.BONUS_WALLET },
+      { userId, type: WalletType.F_WALLET },
+      { userId, type: WalletType.I_WALLET },
+      { userId, type: WalletType.M_WALLET },
+      { userId, type: WalletType.BONUS_WALLET },
     ];
 
-    await this.prisma.wallet.createMany({ data, skipDuplicates: true });
+    await tx.wallet.createMany({ data, skipDuplicates: true });
   }
 
   // get wallet row or throw
@@ -81,21 +91,33 @@ export class WalletService {
         },
       });
 
-      return { walletId: wallet.id, balanceAfter: newBalance.toFixed(), txNumber: txNo };
+      return {
+        walletId: wallet.id,
+        balanceAfter: newBalance.toFixed(),
+        txNumber: txNo,
+      };
     });
   }
 
   // core: debit wallet (atomic)
   async debitWallet(params: {
     userId: number;
-    walletType: 'F_WALLET'|'I_WALLET'|'M_WALLET'|'BONUS_WALLET';
+    walletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
     amount: string;
     txType: TransactionType;
     purpose?: string;
     allowNegative?: boolean; // normally false
     meta?: any;
   }) {
-    const { userId, walletType, amount, txType, purpose, allowNegative = false, meta } = params;
+    const {
+      userId,
+      walletType,
+      amount,
+      txType,
+      purpose,
+      allowNegative = false,
+      meta,
+    } = params;
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
@@ -132,7 +154,11 @@ export class WalletService {
         },
       });
 
-      return { walletId: wallet.id, balanceAfter: newBalance.toFixed(), txNumber: txNo };
+      return {
+        walletId: wallet.id,
+        balanceAfter: newBalance.toFixed(),
+        txNumber: txNo,
+      };
     });
   }
 
@@ -140,7 +166,7 @@ export class WalletService {
   // transferMode check: DOWNLINE_ONLY or CROSSLINE
   async transferFunds(params: {
     fromUserId: number;
-    fromWalletType: 'F_WALLET'|'I_WALLET'|'M_WALLET'|'BONUS_WALLET';
+    fromWalletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
     toMemberId: string; // recipient memberId
     amount: string;
     requestedByUserId?: number; // for auth checks
@@ -151,30 +177,43 @@ export class WalletService {
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
     // Find recipient by memberId
-    const recipient = await this.prisma.user.findUnique({ where: { memberId: toMemberId }});
+    const recipient = await this.prisma.user.findUnique({
+      where: { memberId: toMemberId },
+    });
     if (!recipient) throw new NotFoundException('Recipient not found');
 
     // Check transfer mode from AdminSetting
-    const transferModeSetting = await this.prisma.adminSetting.findUnique({ where: { key: 'transfer_mode' }});
+    const transferModeSetting = await this.prisma.adminSetting.findUnique({
+      where: { key: 'transfer_mode' },
+    });
     const transferMode = transferModeSetting?.value ?? 'CROSSLINE';
 
     if (transferMode === 'DOWNLINE_ONLY') {
       // verify recipient is in downline of fromUserId
       const isDownline = await this.isInDownline(fromUserId, recipient.id);
-      if (!isDownline) throw new ForbiddenException('Recipient not in your downline');
+      if (!isDownline)
+        throw new ForbiddenException('Recipient not in your downline');
     }
 
     // Atomic debit + credit
     return this.prisma.$transaction(async (tx) => {
       // debit sender
-      const fromWallet = await tx.wallet.findUnique({ where: { userId_type: { userId: fromUserId, type: fromWalletType } as any }});
+      const fromWallet = await tx.wallet.findUnique({
+        where: {
+          userId_type: { userId: fromUserId, type: fromWalletType } as any,
+        },
+      });
       if (!fromWallet) throw new NotFoundException('Sender wallet not found');
 
       const fromBalance = new Decimal(fromWallet.balance.toString());
-      if (fromBalance.lt(amt)) throw new BadRequestException('Insufficient balance');
+      if (fromBalance.lt(amt))
+        throw new BadRequestException('Insufficient balance');
 
       const newFromBalance = fromBalance.minus(amt);
-      await tx.wallet.update({ where: { id: fromWallet.id }, data: { balance: newFromBalance.toFixed() }});
+      await tx.wallet.update({
+        where: { id: fromWallet.id },
+        data: { balance: newFromBalance.toFixed() },
+      });
       const txNoOut = generateTxNumber();
       await tx.walletTransaction.create({
         data: {
@@ -187,16 +226,23 @@ export class WalletService {
           balanceAfter: newFromBalance.toFixed(),
           txNumber: txNoOut,
           meta: JSON.stringify({ toMemberId }),
-        }
+        },
       });
 
       // credit recipient's same wallet type (mirrors sender wallet)
-      const toWallet = await tx.wallet.findUnique({ where: { userId_type: { userId: recipient.id, type: fromWalletType } as any }});
+      const toWallet = await tx.wallet.findUnique({
+        where: {
+          userId_type: { userId: recipient.id, type: fromWalletType } as any,
+        },
+      });
       if (!toWallet) throw new NotFoundException('Recipient wallet not found');
 
       const toBalance = new Decimal(toWallet.balance.toString());
       const newToBalance = toBalance.plus(amt);
-      await tx.wallet.update({ where: { id: toWallet.id }, data: { balance: newToBalance.toFixed() }});
+      await tx.wallet.update({
+        where: { id: toWallet.id },
+        data: { balance: newToBalance.toFixed() },
+      });
       const txNoIn = generateTxNumber();
       await tx.walletTransaction.create({
         data: {
@@ -209,12 +255,20 @@ export class WalletService {
           balanceAfter: newToBalance.toFixed(),
           txNumber: txNoIn,
           meta: JSON.stringify({ fromUserId }),
-        }
+        },
       });
 
       return {
-        from: { walletId: fromWallet.id, balanceAfter: newFromBalance.toFixed(), txNumber: txNoOut },
-        to: { walletId: toWallet.id, balanceAfter: newToBalance.toFixed(), txNumber: txNoIn },
+        from: {
+          walletId: fromWallet.id,
+          balanceAfter: newFromBalance.toFixed(),
+          txNumber: txNoOut,
+        },
+        to: {
+          walletId: toWallet.id,
+          balanceAfter: newToBalance.toFixed(),
+          txNumber: txNoIn,
+        },
       };
     });
   }
@@ -222,7 +276,7 @@ export class WalletService {
   // Withdraw request: reserve (debit) funds and create pending withdrawal entry
   async createWithdrawRequest(params: {
     userId: number;
-    walletType: 'I_WALLET'|'M_WALLET'|'BONUS_WALLET'|'F_WALLET';
+    walletType: 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET' | 'F_WALLET';
     amount: string;
     method: string; // e.g., 'USDT_TRX'
     address?: string;
@@ -232,14 +286,19 @@ export class WalletService {
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
     return this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({ where: { userId_type: { userId, type: walletType } as any }});
+      const wallet = await tx.wallet.findUnique({
+        where: { userId_type: { userId, type: walletType } as any },
+      });
       if (!wallet) throw new NotFoundException('Wallet not found');
 
       const bal = new Decimal(wallet.balance.toString());
       if (bal.lt(amt)) throw new BadRequestException('Insufficient balance');
 
       const newBalance = bal.minus(amt);
-      await tx.wallet.update({ where: { id: wallet.id }, data: { balance: newBalance.toFixed() }});
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: newBalance.toFixed() },
+      });
 
       const txNo = generateTxNumber();
       await tx.walletTransaction.create({
@@ -253,7 +312,7 @@ export class WalletService {
           balanceAfter: newBalance.toFixed(),
           txNumber: txNo,
           meta: JSON.stringify({ method, address }),
-        }
+        },
       });
 
       const wr = await tx.withdrawalRequest.create({
@@ -264,10 +323,14 @@ export class WalletService {
           method,
           address,
           status: 'PENDING',
-        }
+        },
       });
 
-      return { withdrawalId: wr.id, txNumber: txNo, balanceAfter: newBalance.toFixed() };
+      return {
+        withdrawalId: wr.id,
+        txNumber: txNo,
+        balanceAfter: newBalance.toFixed(),
+      };
     });
   }
 
@@ -292,7 +355,11 @@ export class WalletService {
 
   // helper: check if candidateId is in the downline of userId
   // simple BFS limited depth
-  async isInDownline(ancestorId: number, candidateId: number, maxDepth = 100): Promise<boolean> {
+  async isInDownline(
+    ancestorId: number,
+    candidateId: number,
+    maxDepth = 100,
+  ): Promise<boolean> {
     if (ancestorId === candidateId) return true;
     const queue = [ancestorId];
     let depth = 0;
@@ -310,5 +377,132 @@ export class WalletService {
       depth++;
     }
     return false;
+  }
+
+  // Create deposit request: creates a pending deposit request and ledger entry (no balance change)
+  async createDepositRequest(params: {
+    userId: number;
+    amount: string;
+    method?: string;
+    reference?: string;
+  }) {
+    const amt = new Decimal(params.amount);
+    if (amt.lte(0)) throw new BadRequestException('Invalid amount');
+
+    const wallet = await this.prisma.wallet.findUnique({
+      where: {
+        userId_type: {
+          userId: params.userId,
+          type: WalletType.F_WALLET,
+        } as any,
+      },
+    });
+    if (!wallet) throw new NotFoundException('F-Wallet not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      const deposit = await tx.depositRequest.create({
+        data: {
+          userId: params.userId,
+          walletId: wallet.id,
+          amount: amt.toFixed(),
+          method: params.method,
+          reference: params.reference,
+        },
+      });
+
+      // Ledger entry (NO balance change)
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: params.userId,
+          type: TransactionType.DEPOSIT,
+          amount: amt.toFixed(),
+          direction: 'CREDIT',
+          purpose: 'Deposit request created',
+          balanceAfter: wallet.balance, // unchanged
+          txNumber: generateTxNumber(),
+          meta: {
+            depositRequestId: deposit.id,
+            status: 'PENDING',
+          },
+        },
+      });
+
+      return deposit;
+    });
+  }
+
+  // Admin: approve deposit request
+
+  async approveDeposit(depositRequestId: number, adminId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const dr = await tx.depositRequest.findUnique({
+        where: { id: depositRequestId },
+      });
+      if (!dr) throw new NotFoundException('Deposit request not found');
+      if (dr.status !== 'PENDING') {
+        throw new BadRequestException('Deposit already processed');
+      }
+
+      const wallet = await tx.wallet.findUnique({ where: { id: dr.walletId } });
+      if (!wallet) throw new NotFoundException('Wallet not found');
+
+      const amt = new Decimal(dr.amount);
+      const newBalance = new Decimal(wallet.balance.toString()).plus(amt);
+
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: newBalance.toFixed() },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: dr.userId,
+          type: TransactionType.DEPOSIT,
+          amount: amt.toFixed(),
+          direction: 'CREDIT',
+          purpose: 'Deposit approved by admin',
+          balanceAfter: newBalance.toFixed(),
+          txNumber: generateTxNumber(),
+          meta: {
+            depositRequestId: dr.id,
+            approvedBy: adminId,
+          },
+        },
+      });
+
+      await tx.depositRequest.update({
+        where: { id: dr.id },
+        data: { status: 'APPROVED', approvedAt: new Date() },
+      });
+
+      return { ok: true };
+    });
+  }
+
+  async adminBonusCredit(params: {
+    userId: number;
+    amount: string;
+    reason?: string;
+    adminId: number;
+  }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: params.userId },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user || user.status !== 'ACTIVE') {
+      throw new ForbiddenException('User account is not active');
+    }
+    return this.creditWallet({
+      userId: params.userId,
+      walletType: WalletType.BONUS_WALLET,
+      amount: params.amount,
+      txType: TransactionType.RANK_REWARD,
+      purpose: params.reason ?? 'Admin bonus credit',
+      meta: {
+        creditedBy: params.adminId,
+      },
+    });
   }
 }

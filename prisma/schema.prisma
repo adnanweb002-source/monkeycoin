@@ -90,6 +90,7 @@ model User {
   wallets         Wallet[]
   walletTxns      WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
+  depositRequests DepositRequest[]
 
   @@map("users")
 }
@@ -186,6 +187,7 @@ model Wallet {
   user         User              @relation(fields: [userId], references: [id])
   transactions WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
+  depositRequests DepositRequest[]
 
   @@unique([userId, type])
   @@map("wallets")
@@ -243,4 +245,63 @@ model AdminSetting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("admin_settings")
+}
+
+
+model DepositRequest {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  walletId    Int
+  amount      Decimal
+  method      String?   // UPI / USDT / BANK / etc
+  reference   String?   // tx hash / ref no
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt   DateTime  @default(now())
+  approvedAt  DateTime?
+
+  user   User   @relation(fields: [userId], references: [id])
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([userId])
+  @@map("deposit_requests")
+}
+
+model Package {
+  id               Int      @id @default(autoincrement())
+  name             String
+  investmentMin    Decimal  @map("investment_min")
+  investmentMax    Decimal  @map("investment_max")
+  dailyReturnPct   Decimal  @map("daily_return_pct") // e.g. 1.2
+  durationDays     Int      @map("duration_days")
+  capitalReturn    Decimal  @map("capital_return")   // fixed or % (you decide)
+
+  isActive         Boolean  @default(true)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  purchases        PackagePurchase[]
+
+  @@map("packages")
+}
+
+model PackagePurchase {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  packageId       Int
+
+  amount          Decimal
+  startDate       DateTime
+  endDate         DateTime
+
+  lastCreditedAt  DateTime?
+  status          String   // ACTIVE | COMPLETED
+
+  createdAt       DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  package Package @relation(fields: [packageId], references: [id])
+
+  @@index([userId])
+  @@map("package_purchases")
 }

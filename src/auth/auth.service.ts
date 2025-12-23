@@ -115,8 +115,12 @@ export class AuthService {
         },
       });
 
+      console.log('New user created with ID:', newUser.id);
+
+
+      console.log('Creating wallets for user ID:', newUser.id);
       // Create 4 Wallets
-      this.walletService.createWalletsForUser(newUser.id);
+      await this.walletService.createWalletsForUser(tx, newUser.id);
 
       
       // ➜ REFERRAL BONUS
@@ -173,6 +177,11 @@ export class AuthService {
       include: { twoFactorSecret: true }, // corrected
     });
     if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    if (user.status === 'SUSPENDED') {
+      throw new UnauthorizedException('Account suspended. Contact support.');
+    }
+
 
     const ok = await this.verifyPassword(user.passwordHash, dto.password);
     if (!ok) throw new UnauthorizedException('Invalid credentials');

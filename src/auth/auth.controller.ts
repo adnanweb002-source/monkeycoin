@@ -91,4 +91,10 @@ export class AuthController {
     }
     return this.twoFactorService.adminReset(parseInt(userId, 10), req.user.id, ip);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('/get-profile')
+  async getUserProfile(@Request() req) {
+    return this.authService.getProfile(req.user.id);
+  }
 }

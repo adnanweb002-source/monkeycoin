@@ -1,16 +1,15 @@
 // wallet.controller.ts (example)
-import { Controller, Post, Body, Param, Req } from '@nestjs/common';
+import { Controller, Post, Body, Param, Req, Get } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 
 @Controller('wallet')
 export class WalletController {
   constructor(private svc: WalletService) {}
 
-  // @Post('create-for-user/:userId')
-  // async createForUser(@Param('userId') userId: string) {
-  //   await this.svc.createWalletsForUser(Number(userId));
-  //   return { ok: true };
-  // }
+  @Get('user-wallets')
+  async getUserWallets(@Req() req) {
+    return this.svc.getUserWallets(req.user.id);
+  }
 
   @Post('transfer')
   async transfer(@Body() dto: any) {

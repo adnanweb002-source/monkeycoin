@@ -360,4 +360,26 @@ export class AuthService {
     // In a real system send verification link to new email to validate before enabling.
     return { ok: true };
   }
+
+  async getProfile(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        memberId: true,
+        email: true,
+        phoneNumber: true,
+        firstName: true,
+        lastName: true,
+        country: true,
+        sponsorId: true,
+        parentId: true,
+        position: true,
+        status: true,
+        isG2faEnabled: true,
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+    return user;
+  }
 }

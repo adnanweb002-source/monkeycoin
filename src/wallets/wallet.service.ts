@@ -41,6 +41,13 @@ export class WalletService {
     return wallet;
   }
 
+  async getUserWallets(userId: number) {
+    const wallets = await this.prisma.wallet.findMany({
+      where: { userId },
+    });
+    return wallets;
+  }
+
   // read balance
   async getBalance(userId: number, type: string) {
     const wallet = await this.getWallet(userId, type);

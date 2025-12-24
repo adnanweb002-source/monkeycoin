@@ -27,6 +27,28 @@ export class AuthService {
     return argon2.verify(hash, password);
   }
 
+  private async findAvailablePlacement(startParentId: number, position: 'LEFT' | 'RIGHT') {
+  let queue = [startParentId];
+
+  while (queue.length) {
+    const pid = queue.shift();
+
+    const existing = await this.prisma.user.findFirst({
+      where: { parentId: pid, position },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return pid;  // slot free here
+    }
+
+    queue.push(existing.id); // go deeper
+  }
+
+  throw new BadRequestException('No available slot in tree');
+}
+
+
   async register(dto: RegisterDto, ip: string) {
     const { firstName, lastName, phone, country, email, password, sponsorMemberId, parentMemberId, position } = dto;
 
@@ -64,7 +86,7 @@ export class AuthService {
     // -----------------------------
     // 4. Resolve Parent
     // -----------------------------
-    let parentId: number;
+    let parentId
     const finalPosition = (position ?? 'RIGHT') as 'LEFT' | 'RIGHT';
 
     if (parentMemberId) {
@@ -75,7 +97,7 @@ export class AuthService {
 
       parentId = parent.id;
     } else {
-      parentId = 1; // COMPANY ROOT
+      parentId = await this.findAvailablePlacement(1, finalPosition)
     }
 
     // -----------------------------

@@ -12,6 +12,8 @@ import { Prisma } from '@prisma/client';
 import { TransactionType } from '@prisma/client';
 import { WalletType } from '@prisma/client';
 import { PrismaClient } from '@prisma/client';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 
 @Injectable()
 export class WalletService {
@@ -41,6 +43,7 @@ export class WalletService {
     return wallet;
   }
 
+  @UseGuards(JwtAuthGuard)
   async getUserWallets(userId: number) {
     const wallets = await this.prisma.wallet.findMany({
       where: { userId },

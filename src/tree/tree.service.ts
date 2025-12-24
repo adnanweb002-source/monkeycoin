@@ -107,12 +107,12 @@ export class TreeService {
     if (root && root.sponsorId) {
       const sponsorRow = await this.prisma.user.findUnique({
         where: { id: root.sponsorId },
-        select: { id: true, username: true, memberId: true },
+        select: { id: true, phoneNumber: true, memberId: true },
       });
       if (sponsorRow) {
         root.sponsor = {
           id: sponsorRow.id,
-          username: sponsorRow.username,
+          phone: sponsorRow.phoneNumber,
           memberId: sponsorRow.memberId,
         };
       }

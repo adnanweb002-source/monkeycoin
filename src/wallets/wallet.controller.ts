@@ -1,11 +1,14 @@
 // wallet.controller.ts (example)
 import { Controller, Post, Body, Param, Req, Get } from '@nestjs/common';
 import { WalletService } from './wallet.service';
+import { JwtAuthGuard } from '../auth/jwt.auth.guard';
+import { UseGuards } from '@nestjs/common';
 
 @Controller('wallet')
 export class WalletController {
   constructor(private svc: WalletService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get('user-wallets')
   async getUserWallets(@Req() req) {
     return this.svc.getUserWallets(req.user.id);

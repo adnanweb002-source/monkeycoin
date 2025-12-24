@@ -53,10 +53,12 @@ enum TransactionType {
 model User {
   id             Int       @id @default(autoincrement())
   memberId       String    @unique @map("member_id")
-  username       String    @unique
+  firstName      String    @map("first_name") @default("")
+  lastName       String    @map("last_name")@default("")
   email          String    @unique
+  phoneNumber    String    @map("phone_number")@default("")
   passwordHash   String    @map("password_hash")
-
+  country        String    @default("")
   sponsorId      Int?      @map("sponsor_id")
   parentId       Int?      @map("parent_id")
   position       Position? @default(LEFT)
@@ -91,7 +93,7 @@ model User {
   walletTxns      WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
   depositRequests DepositRequest[]
-
+  packagePurchases PackagePurchase[]
   @@map("users")
 }
 

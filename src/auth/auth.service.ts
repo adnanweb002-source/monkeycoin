@@ -28,17 +28,17 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto, ip: string) {
-    const { username, email, password, sponsorMemberId, parentMemberId, position } = dto;
+    const { firstName, lastName, phone, country, email, password, sponsorMemberId, parentMemberId, position } = dto;
 
     // -----------------------------
     // 1. Unique Check
     // -----------------------------
     const existing = await this.prisma.user.findFirst({
-      where: { OR: [{ email }, { username }] },
+      where: { OR: [{ email }, { phoneNumber: phone }] },
     });
 
     if (existing) {
-      throw new ConflictException('Email or username already in use');
+      throw new ConflictException('Email or phone number already in use');
     }
 
     // -----------------------------
@@ -101,7 +101,10 @@ export class AuthService {
       const newUser = await tx.user.create({
         data: {
           memberId: `M${Date.now()}`,
-          username,
+          firstName,
+          lastName,
+          phoneNumber: phone,
+          country,
           email,
           passwordHash,
           sponsorId,
@@ -162,7 +165,11 @@ export class AuthService {
     return {
       id: result.id,
       memberId: result.memberId,
-      username: result.username,
+      email: result.email,
+      phone: result.phoneNumber,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      country: result.country,
       sponsorId,
       parentId,
       position: finalPosition,
@@ -172,7 +179,7 @@ export class AuthService {
   async login(dto: LoginDto, ip: string) {
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email: dto.usernameOrEmail }, { username: dto.usernameOrEmail }],
+        OR: [{ email: dto.phoneOrEmail }, { phoneNumber: dto.phoneOrEmail }],
       },
       include: { twoFactorSecret: true }, // corrected
     });

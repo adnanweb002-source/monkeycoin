@@ -24,6 +24,7 @@ export class WalletController {
     return this.svc.transferFunds(dto);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('withdraw')
   async withdraw(@Body() dto: any) {
     return this.svc.createWithdrawRequest(dto);
@@ -42,6 +43,7 @@ export class WalletController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('deposit-request')
   async createDeposit(
     @Req() req,
@@ -106,7 +108,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('transactions')
+  @Post('transactions')
   async getTransactions(
     @Req() req,
     @Body() body: { skip?: number; take?: number; walletType: WalletType },

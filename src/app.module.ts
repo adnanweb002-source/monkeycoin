@@ -5,8 +5,9 @@ import { AuthModule } from './auth/auth.module';
 import { TreeModule } from './tree/tree.module';
 import { WalletModule } from './wallets/wallet.module';
 import { PackagesModule } from './packages/packages.module';
+import { AdminModule } from './admin/admin.module';
 @Module({
-  imports: [AuthModule, TreeModule, WalletModule, PackagesModule],
+  imports: [AuthModule, TreeModule, WalletModule, PackagesModule, AdminModule],
   controllers: [AppController],
   providers: [AppService],
 })

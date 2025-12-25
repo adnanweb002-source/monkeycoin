@@ -112,7 +112,7 @@ export class AuthService {
 
     if (slotTaken) {
       throw new BadRequestException(
-        `Position ${finalPosition} under parent ${parentMemberId ?? 'COMPANY(1)'} is already occupied.`,
+        `Position ${finalPosition} under parent ${parentMemberId ?? 'COMPANY'} is already occupied.`,
       );
     }
 

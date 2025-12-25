@@ -11,6 +11,11 @@ async function bootstrap() {
     methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
   });
 
+  // Health check endpoint
+  app.getHttpAdapter().get('/health', (req, res) => {
+    res.status(200).send('OK');
+  });
+
 
   const config = new DocumentBuilder()
     .setTitle('My API Docs')

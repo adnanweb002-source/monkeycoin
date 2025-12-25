@@ -21,8 +21,6 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/prisma ./prisma
 
-# ENTRYPOINT (runs migrations before starting)
-COPY start.sh ./start.sh
-RUN chmod +x start.sh
+EXPOSE 3000
 
-CMD ["./start.sh"]
+CMD ["npm", "run", "start:prod"]

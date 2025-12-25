@@ -137,4 +137,41 @@ export class TreeService {
 
     return convertNode(root);
   }
+
+  async getRecentDownline(userId: number, limit = 20) {
+  const queue = [userId];
+  const downlineIds: number[] = [];
+
+  while (queue.length) {
+    const id = queue.shift();
+    const children = await this.prisma.user.findMany({
+      where: { parentId: id },
+      select: { id: true },
+    });
+
+    for (const c of children) {
+      downlineIds.push(c.id);
+      queue.push(c.id);
+    }
+  }
+
+  return this.prisma.user.findMany({
+    where: { id: { in: downlineIds } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      memberId: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      createdAt: true,
+      sponsorId: true,
+      parentId: true,
+      position: true,
+      status: true,
+    },
+  });
+}
+
 }

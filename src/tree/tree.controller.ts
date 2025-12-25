@@ -1,12 +1,14 @@
-import { Controller, Get, Param, ParseIntPipe, Query, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query, NotFoundException, Req } from '@nestjs/common';
 import { TreeService } from './tree.service';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 
 @Controller('tree')
 export class TreeController {
   constructor(private readonly tree: TreeService) {}
 
-  // GET /tree/user/:id?depth=3
   @Get('user/:id')
+  @UseGuards(JwtAuthGuard)
   async getUserTree(
     @Param('id', ParseIntPipe) id: number,
     @Query('depth') depth?: string,
@@ -15,5 +17,11 @@ export class TreeController {
     const data = await this.tree.getUserTreeRecursive(id, maxDepth);
     if (!data) throw new NotFoundException('User not found');
     return data;
+  }
+
+  @Get('downline/recent')
+  @UseGuards(JwtAuthGuard)
+  async getRecentDownline(@Req() req, @Query('limit') limit?: string) {
+    return this.tree.getRecentDownline(req.user.id, Number(limit) || 20);
   }
 }

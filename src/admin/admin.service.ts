@@ -6,10 +6,14 @@ import {
 import { PrismaService } from '../prisma.service';
 import { Status } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { WalletService } from 'src/wallets/wallet.service';
 
 @Injectable()
 export class AdminUsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private walletService: WalletService,
+  ) {}
 
   async suspendUser(userId: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -140,5 +144,45 @@ export class AdminUsersService {
     });
 
     return { ok: true };
+  }
+
+  async ensureCompanyAccount() {
+    let company = await this.prisma.user.findFirst({
+      where: { memberId: 'COMPANY' },
+    });
+
+    if (company)
+      return {
+        created: false,
+        id: company.id,
+        message: 'Company account already exists',
+      };
+
+    const companyPassword = await argon2.hash('company_secure_password');
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const newCompany = await tx.user.create({
+        data: {
+          id: 1,
+          memberId: 'COMPANY',
+          firstName: 'Monkey',
+          lastName: 'Coin',
+          email: 'company@monkeycoin.com',
+          passwordHash: companyPassword,
+          sponsorId: null,
+          parentId: null,
+          position: 'LEFT',
+          status: 'ACTIVE',
+          g2faSecret: '',
+          isG2faEnabled: false,
+        },
+      });
+
+      await this.walletService.createWalletsForUser(tx, newCompany.id);
+
+      return newCompany;
+    });
+
+    return { created: true, id: result.id, message: 'Company account created' };
   }
 }

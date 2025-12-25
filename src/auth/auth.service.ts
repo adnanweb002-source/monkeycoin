@@ -399,6 +399,7 @@ export class AuthService {
         position: true,
         status: true,
         isG2faEnabled: true,
+        role: true,
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

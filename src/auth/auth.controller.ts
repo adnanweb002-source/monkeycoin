@@ -86,7 +86,7 @@ export class AuthController {
   @Post('admin/users/:id/2fa-reset')
   async adminReset2fa(@Request() req, @Param('id') userId: string, @Ip() ip: string) {
     // NOTE: enforce admin role in real world (additional guard)
-    if (!req.user || !req.user.roles || !req.user.roles.includes('ADMIN')) {
+    if (!req.user || !req.user.role || req.user.role != 'ADMIN') {
       throw new ForbiddenException('Admin role required');
     }
     return this.twoFactorService.adminReset(parseInt(userId, 10), req.user.id, ip);

@@ -175,6 +175,7 @@ export class AdminUsersService {
           status: 'ACTIVE',
           g2faSecret: '',
           isG2faEnabled: false,
+          role: 'ADMIN'
         },
       });
 

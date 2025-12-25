@@ -24,6 +24,11 @@ enum Status {
   SUSPENDED
 }
 
+enum Role {
+  ADMIN
+  USER
+}
+
 enum WalletType {
   F_WALLET      // Deposit wallet
   I_WALLET      // Referral / Binary Income
@@ -62,7 +67,7 @@ model User {
   sponsorId      Int?      @map("sponsor_id")
   parentId       Int?      @map("parent_id")
   position       Position? @default(LEFT)
-
+  role           Role     @default(USER)
   status         Status    @default(ACTIVE)
   rankId         Int?      @map("rank_id")
 
@@ -85,7 +90,6 @@ model User {
   // Relations
   twoFactorSecret TwoFactorSecret?
   refreshTokens   RefreshToken[]
-  roles           Role[]     @relation("UserRole")
   auditLogs       AuditLog[] @relation("AuditByUser")
 
   // Wallet relations
@@ -139,15 +143,6 @@ model RefreshToken {
 // ROLES
 // ────────────────────────────────────────────────
 //
-
-model Role {
-  id    Int    @id @default(autoincrement())
-  name  String @unique
-
-  users User[] @relation("UserRole")
-
-  @@map("roles")
-}
 
 //
 // ────────────────────────────────────────────────

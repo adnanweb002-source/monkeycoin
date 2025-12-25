@@ -61,6 +61,7 @@ export class PackagesService {
         amount: amt.toFixed(),
         txType: TransactionType.PACKAGE_PURCHASE,
         purpose: `Package purchase: ${pkg.name}`,
+        meta: { packageId: pkg.id, amount: amt.toFixed() },
       });
 
       // Start next day

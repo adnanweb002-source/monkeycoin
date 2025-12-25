@@ -6,7 +6,7 @@ import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { UseGuards } from '@nestjs/common';
 import { TransferDto } from './dto/transfer.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
-import { Role } from 'src/auth/enums/role.enum';
+import { Role } from '@prisma/client';
 import { WalletType } from '@prisma/client';
 
 @Controller('wallet')

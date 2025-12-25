@@ -24,8 +24,10 @@ export class AdminUsersController {
 
   @Patch(':userId/disable-2fa')
   disable2fa(@Param('userId') userId: string, @Req() req) {
-    return this.svc.adminDisable2fa(req.user.userId, Number(userId));
+    return this.svc.adminDisable2fa(req.user.id, Number(userId));
   }
+
+
 }
 
 @Controller('admin/')
@@ -33,7 +35,7 @@ export class AdminUsersController {
 export class AdminController {
   constructor(private readonly adminService: AdminUsersService) {}
 
-  @Post('bootstrap/company')
+   @Post('bootstrap/company')
   async bootstrapCompany() {
     return this.adminService.ensureCompanyAccount();
   }

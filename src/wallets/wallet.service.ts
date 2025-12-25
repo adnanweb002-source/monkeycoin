@@ -125,13 +125,15 @@ export class WalletService {
       allowNegative = false,
       meta,
     } = params;
+    console.log('Debit Wallet Params:', params);
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
     return this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({
-        where: { userId_type: { userId, type: walletType } as any },
+      const wallet = await tx.wallet.findFirst({
+        where: { userId, type: walletType },
       });
+
       if (!wallet) throw new NotFoundException('Wallet not found');
 
       const bal = new Decimal(wallet.balance.toString());

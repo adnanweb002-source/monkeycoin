@@ -6,14 +6,15 @@ import { PurchasePackageDto } from './dto/purchase-package.dto';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role } from 'src/auth/enums/role.enum';
+import { Role} from '@prisma/client';
 
 @Controller('packages')
 export class PackagesController {
   constructor(private service: PackagesService) {}
 
   // -------- ADMIN: CREATE PACKAGE --------
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post()
   create(@Body() dto: CreatePackageDto) {
     return this.service.createPackage(dto);
@@ -38,13 +39,13 @@ export class PackagesController {
   @UseGuards(JwtAuthGuard)
   @Post('purchase')
   purchase(@Req() req, @Body() dto: PurchasePackageDto) {
-    return this.service.purchasePackage(req.user.userId, dto);
+    return this.service.purchasePackage(req.user.id, dto);
   }
 
   // -------- USER: MY PACKAGES --------
   @UseGuards(JwtAuthGuard)
   @Get('my')
   myPackages(@Req() req) {
-    return this.service.listUserPackages(req.user.userId);
+    return this.service.listUserPackages(req.user.id);
   }
 }

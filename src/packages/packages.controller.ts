@@ -13,8 +13,7 @@ export class PackagesController {
   constructor(private service: PackagesService) {}
 
   // -------- ADMIN: CREATE PACKAGE --------
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @UseGuards(JwtAuthGuard)
   @Post()
   create(@Body() dto: CreatePackageDto) {
     return this.service.createPackage(dto);

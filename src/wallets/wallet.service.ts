@@ -512,4 +512,52 @@ export class WalletService {
       },
     });
   }
+
+  async getWalletTransactions(
+    userId: number,
+    walletType: WalletType,
+    skip = 0,
+    take = 20,
+  ) {
+    const wallet = await this.getWallet(userId, walletType);
+
+    const transactions = await this.prisma.walletTransaction.findMany({
+      where: { walletId: wallet.id },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    });
+
+    return transactions;
+  }
+
+  async getWithdrawalRequests(
+    userId: number,
+    skip = 0,
+    take = 20,
+    status?: string,
+  ) {
+    const requests = await this.prisma.withdrawalRequest.findMany({
+      where: { userId, status: status ?? undefined },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    });
+    return requests;
+  }
+
+  async getDepositRequests(
+    userId: number,
+    skip = 0,
+    take = 20,
+    status?: string,
+  ) {
+    const requests = await this.prisma.depositRequest.findMany({
+      where: { userId, status: status ?? undefined },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    });
+    return requests;
+  }
 }

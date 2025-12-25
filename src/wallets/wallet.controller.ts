@@ -2,7 +2,12 @@
 import { Controller, Post, Body, Param, Req, Get } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
+import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { UseGuards } from '@nestjs/common';
+import { TransferDto } from './dto/transfer.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Role } from 'src/auth/enums/role.enum';
+import { WalletType } from '@prisma/client';
 
 @Controller('wallet')
 export class WalletController {
@@ -50,11 +55,15 @@ export class WalletController {
     });
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post('admin/deposits/:id/approve')
   approveDeposit(@Param('id') id: string, @Req() req) {
     return this.svc.approveDeposit(Number(id), req.user.id);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post('admin/bonus-credit')
   async bonusCredit(
     @Body() body: { userId: number; amount: string; reason?: string },
@@ -67,4 +76,47 @@ export class WalletController {
       adminId: req.user.id,
     });
   }
+  
+  @UseGuards(JwtAuthGuard)
+  @Get('withdraw-requests')
+  async getWithdrawalRequests(
+    @Req() req,
+    @Body() body: { skip?: number; take?: number; status?: string },
+  ) {
+    return this.svc.getWithdrawalRequests(
+      req.user.id,
+      body.skip ?? 0,
+      body.take ?? 20,
+      body.status,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('deposit-requests')
+  async getDepositRequests(
+    @Req() req,
+    @Body() body: { skip?: number; take?: number; status?: string },
+  ) {
+    return this.svc.getDepositRequests(
+      req.user.id,
+      body.skip ?? 0,
+      body.take ?? 20,
+      body.status,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('transactions')
+  async getTransactions(
+    @Req() req,
+    @Body() body: { skip?: number; take?: number; walletType: WalletType },
+  ) {
+    return this.svc.getWalletTransactions(
+      req.user.id,
+      body.walletType,
+      body.skip ?? 0,
+      body.take ?? 20,
+    );
+  }
+
 }

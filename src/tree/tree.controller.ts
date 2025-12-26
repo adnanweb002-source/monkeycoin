@@ -8,7 +8,6 @@ export class TreeController {
   constructor(private readonly tree: TreeService) {}
 
   @Get('user/:id')
-  @UseGuards(JwtAuthGuard)
   async getUserTree(
     @Param('id', ParseIntPipe) id: number,
     @Query('depth') depth?: string,

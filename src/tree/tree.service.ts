@@ -3,7 +3,9 @@ import { PrismaService } from '../prisma.service';
 
 type DbRow = {
   id: number;
-  username: string;
+  first_name: string;
+  last_name: string;
+  phone_number: string | null;
   member_id: string | null;
   email: string | null;
   parent_id: number | null;
@@ -36,7 +38,9 @@ export class TreeService {
       WITH RECURSIVE subtree AS (
         SELECT
           id,
-          username,
+          first_name,
+          last_name,
+          phone_number,
           member_id,
           email,
           parent_id,
@@ -51,7 +55,9 @@ export class TreeService {
 
         SELECT
           u.id,
-          u.username,
+          u.first_name,
+          u.last_name,
+          u.phone_number,
           u.member_id,
           u.email,
           u.parent_id,
@@ -63,7 +69,7 @@ export class TreeService {
         JOIN subtree s ON u.parent_id = s.id
         WHERE s.lvl + 1 <= ${depth}
       )
-      SELECT id, username, member_id, email, parent_id, position, status, sponsor_id
+      SELECT id, first_name, last_name, member_id, email, parent_id, position, status, sponsor_id
       FROM subtree;
     `;
 
@@ -74,7 +80,8 @@ export class TreeService {
     rows.forEach((r) => {
       map.set(r.id, {
         id: r.id,
-        username: r.username,
+        firstName: r.first_name,
+        lastName: r.last_name,
         memberId: r.member_id ?? undefined,
         email: r.email ?? undefined,
         position: r.position as 'LEFT' | 'RIGHT' | null,

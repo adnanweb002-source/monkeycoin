@@ -1,4 +1,4 @@
-import { Controller, Patch, Param, UseGuards, Req, Post } from '@nestjs/common';
+import {Controller, Patch, Param, UseGuards, Req, Post, Get, Query } from '@nestjs/common';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -11,6 +11,12 @@ import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
 @Roles(Role.ADMIN)
 export class AdminUsersController {
   constructor(private readonly svc: AdminUsersService) {}
+
+  @Get('list')
+  getAllUsers(@Query('take') take: string, @Query('skip') skip: string) {
+    console.log('take, skip', take, skip);
+    return this.svc.getAllUsers(Number(take), Number(skip));
+  }
 
   @Patch(':userId/suspend')
   suspend(@Param('userId') userId: string) {
@@ -27,6 +33,10 @@ export class AdminUsersController {
     return this.svc.adminDisable2fa(req.user.id, Number(userId));
   }
 
+  @Patch(':userId/set-password')
+  setPassword(@Param('userId') userId: string, @Req() req) {
+    return this.svc.adminSetPassword(req.user.id, Number(userId), req.body.password);
+  }
 
 }
 

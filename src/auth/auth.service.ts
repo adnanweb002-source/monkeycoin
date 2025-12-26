@@ -132,7 +132,7 @@ export class AuthService {
           sponsorId,
           parentId,
           position: finalPosition,
-          status: 'INACTIVE',
+          status: 'ACTIVE',
 
           // Ensure these exist in your Prisma schema (you have them)
           g2faSecret: '',

@@ -15,6 +15,29 @@ export class AdminUsersService {
     private walletService: WalletService,
   ) {}
 
+  async getAllUsers(take: number, skip: number) {
+    const users = await this.prisma.user.findMany({
+      skip,
+      take,
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phoneNumber: true,
+        memberId: true,
+        status: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    const total = await this.prisma.user.count();
+
+    return { users, total };
+  }
+
   async suspendUser(userId: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');

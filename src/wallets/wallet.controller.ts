@@ -78,7 +78,7 @@ export class WalletController {
       adminId: req.user.id,
     });
   }
-  
+
   @UseGuards(JwtAuthGuard)
   @Get('withdraw-requests')
   async getWithdrawalRequests(
@@ -109,16 +109,14 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard)
   @Post('transactions')
-  async getTransactions(
-    @Req() req,
-    @Body() body: { skip?: number; take?: number; walletType: WalletType },
-  ) {
+  async getTransactions(@Req() req, @Body() body: any) {
+    const dto = body.data ?? body;
+
     return this.svc.getWalletTransactions(
       req.user.id,
-      body.walletType,
-      body.skip ?? 0,
-      body.take ?? 20,
+      dto.walletType,
+      dto.skip ?? 0,
+      dto.take ?? 20,
     );
   }
-
 }

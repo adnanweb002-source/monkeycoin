@@ -191,14 +191,9 @@ export class WalletService {
     });
     if (!recipient) throw new NotFoundException('Recipient not found');
 
-    // Check transfer mode from AdminSetting
-    const transferModeSetting = await this.prisma.adminSetting.findUnique({
-      where: { key: 'transfer_mode' },
-    });
-    const transferMode = transferModeSetting?.value ?? 'CROSSLINE';
+    const transferMode = 'DOWNLINE_ONLY'
 
     if (transferMode === 'DOWNLINE_ONLY') {
-      // verify recipient is in downline of fromUserId
       const isDownline = await this.isInDownline(fromUserId, recipient.id);
       if (!isDownline)
         throw new ForbiddenException('Recipient not in your downline');
@@ -280,6 +275,90 @@ export class WalletService {
         },
       };
     });
+  }
+
+  async tranferFundsInternal(params: {
+    userId: number;
+    fromWalletType: WalletType;
+    toWalletType: WalletType;
+    amount: string;
+  }) {
+    const { userId, fromWalletType, toWalletType, amount } = params;
+    const amt = new Decimal(amount);
+    if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
+
+    // Atomic debit + credit between user's own wallets
+    return this.prisma.$transaction(async (tx) => {
+      // debit fromWallet
+      const fromWallet = await tx.wallet.findUnique({
+        where: {
+          userId_type: { userId, type: fromWalletType } as any,
+        },
+      });
+      if (!fromWallet) throw new NotFoundException('From wallet not found');
+      const fromBalance = new Decimal(fromWallet.balance.toString());
+      if (fromBalance.lt(amt))
+        throw new BadRequestException('Insufficient balance in from wallet');
+      const newFromBalance = fromBalance.minus(amt);
+      await tx.wallet.update({
+        where: { id: fromWallet.id },
+        data: { balance: newFromBalance.toFixed() },
+      });
+      const txNoOut = generateTxNumber();
+      await tx.walletTransaction.create({
+        data: {
+          walletId: fromWallet.id,
+          userId,
+          type: TransactionType.TRANSFER_OUT,
+          amount: amt.toFixed(),
+          direction: 'DEBIT',
+          purpose: `Internal transfer to ${toWalletType}`,
+          balanceAfter: newFromBalance.toFixed(),
+          txNumber: txNoOut,
+          meta: JSON.stringify({ toWalletType }),
+        },
+      });
+      // credit toWallet
+      const toWallet = await tx.wallet.findUnique({
+        where: { 
+          userId_type: { userId, type: toWalletType } as any,
+        },
+      });
+      if (!toWallet) throw new NotFoundException('To wallet not found');
+      const toBalance = new Decimal(toWallet.balance.toString());
+      const newToBalance = toBalance.plus(amt); 
+      await tx.wallet.update({
+        where: { id: toWallet.id },
+        data: { balance: newToBalance.toFixed() },
+      });
+      const txNoIn = generateTxNumber();
+      await tx.walletTransaction.create({
+        data: {
+          walletId: toWallet.id,
+          userId,
+          type: TransactionType.TRANSFER_IN,
+          amount: amt.toFixed(),
+          direction: 'CREDIT',
+          purpose: `Internal transfer from ${fromWalletType}`,
+          balanceAfter: newToBalance.toFixed(),
+          txNumber: txNoIn,
+          meta: JSON.stringify({ fromWalletType }),
+        },
+      });
+      return {
+        from: {
+          walletId: fromWallet.id,
+          balanceAfter: newFromBalance.toFixed(),
+          txNumber: txNoOut,
+        },
+        to: {
+          walletId: toWallet.id,
+          balanceAfter: newToBalance.toFixed(),
+          txNumber: txNoIn,
+        },
+      };
+    });
+
   }
 
   // Withdraw request: reserve (debit) funds and create pending withdrawal entry

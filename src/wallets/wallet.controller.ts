@@ -1,5 +1,5 @@
 // wallet.controller.ts (example)
-import { Controller, Post, Body, Param, Req, Get } from '@nestjs/common';
+import { Controller, Post, Body, Param, Req, Get, Query } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
@@ -19,9 +19,17 @@ export class WalletController {
     return this.svc.getUserWallets(req.user.id);
   }
 
+
+  @UseGuards(JwtAuthGuard)
   @Post('transfer')
   async transfer(@Body() dto: any) {
     return this.svc.transferFunds(dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('internal-transfer')
+  async internalTransfer(@Req() req, @Body() dto: { fromWalletType: WalletType; toWalletType: WalletType; amount: string }) {
+    return this.svc.tranferFundsInternal({ userId: req.user.id, fromWalletType: dto.fromWalletType, toWalletType: dto.toWalletType, amount: dto.amount });
   }
 
   @UseGuards(JwtAuthGuard)
@@ -83,13 +91,15 @@ export class WalletController {
   @Get('withdraw-requests')
   async getWithdrawalRequests(
     @Req() req,
-    @Body() body: { skip?: number; take?: number; status?: string },
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+    @Query('status') status?: string,
   ) {
     return this.svc.getWithdrawalRequests(
       req.user.id,
-      body.skip ?? 0,
-      body.take ?? 20,
-      body.status,
+      Number(skip) || 0,
+      Number(take) || 20,
+      status,
     );
   }
 

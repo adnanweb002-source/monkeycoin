@@ -98,6 +98,9 @@ model User {
   withdrawalRequests WithdrawalRequest[]
   depositRequests DepositRequest[]
   packagePurchases PackagePurchase[]
+
+  queries Query[]
+  queryReplies QueryReply[]
   @@map("users")
 }
 
@@ -299,6 +302,52 @@ model PackagePurchase {
   user    User    @relation(fields: [userId], references: [id])
   package Package @relation(fields: [packageId], references: [id])
 
+  packageIncomeLog PackageIncomeLog[]
+
   @@index([userId])
   @@map("package_purchases")
+}
+
+enum QueryStatus {
+  OPEN
+  CLOSED
+}
+
+model Query {
+  id       Int          @id @default(autoincrement())
+  userId   Int
+  message  String
+  status   QueryStatus  @default(OPEN)
+  createdAt DateTime @default(now()) 
+  updatedAt DateTime @default(now())
+  user     User         @relation(fields: [userId], references: [id])
+  replies  QueryReply[]
+
+  @@map("queries")
+}
+
+model QueryReply {
+  id        Int      @id @default(autoincrement())
+  queryId   Int
+  userId    Int?     // null → reply by admin
+  message   String
+
+  createdAt DateTime @default(now())
+
+  query     Query    @relation(fields: [queryId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("query_replies")
+}
+
+model PackageIncomeLog {
+  id              Int      @id @default(autoincrement())
+  purchaseId      Int
+  creditDate      DateTime
+  amount          Decimal
+
+  purchase        PackagePurchase @relation(fields: [purchaseId], references: [id])
+
+  @@unique([purchaseId, creditDate]) // prevents double credit
+  @@map("package_income_logs")
 }

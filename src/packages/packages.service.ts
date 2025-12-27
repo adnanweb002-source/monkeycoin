@@ -6,7 +6,11 @@ import { UpdatePackageDto } from './dto/update-package.dto';
 import { PurchasePackageDto } from './dto/purchase-package.dto';
 import Decimal from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
-
+import { JwtAuthGuard } from 'src/auth/jwt.auth.guard';
+import { RolesGuard } from 'src/auth/guards/roles.guard';
+import { Role } from '@prisma/client';
+import { UseGuards } from '@nestjs/common';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 @Injectable()
 export class PackagesService {
   constructor(
@@ -14,7 +18,6 @@ export class PackagesService {
     private walletService: WalletService,
   ) {}
 
-  // -------- ADMIN: CREATE PACKAGE --------
   async createPackage(dto: CreatePackageDto) {
     return this.prisma.package.create({ data: dto });
   }
@@ -57,7 +60,7 @@ export class PackagesService {
       // Debit M Wallet
       await this.walletService.debitWallet({
         userId,
-        walletType: WalletType.M_WALLET,
+        walletType: WalletType.F_WALLET,
         amount: amt.toFixed(),
         txType: TransactionType.PACKAGE_PURCHASE,
         purpose: `Package purchase: ${pkg.name}`,

@@ -1,10 +1,20 @@
-import {Controller, Patch, Param, UseGuards, Req, Post, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Patch,
+  Param,
+  UseGuards,
+  Req,
+  Post,
+  Get,
+  Query,
+} from '@nestjs/common';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/enums/role.enum';
 import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
+import { PackagesCronService } from 'src/packages/packages.cron';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -35,18 +45,31 @@ export class AdminUsersController {
 
   @Patch(':userId/set-password')
   setPassword(@Param('userId') userId: string, @Req() req) {
-    return this.svc.adminSetPassword(req.user.id, Number(userId), req.body.password);
+    return this.svc.adminSetPassword(
+      req.user.id,
+      Number(userId),
+      req.body.password,
+    );
   }
-
 }
 
 @Controller('admin/')
 @UseGuards(ApiKeyGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminUsersService) {}
+  constructor(
+    private readonly adminService: AdminUsersService,
+    private readonly cron: PackagesCronService,
+  ) {}
 
-   @Post('bootstrap/company')
+  @Post('bootstrap/company')
   async bootstrapCompany() {
     return this.adminService.ensureCompanyAccount();
+  }
+
+  @Post('admin/run-daily-returns')
+  @Roles('ADMIN')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  runNow() {
+    return this.cron.runDailyReturns();
   }
 }

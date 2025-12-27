@@ -12,7 +12,7 @@ import { Prisma } from '@prisma/client';
 import { TransactionType } from '@prisma/client';
 import { WalletType } from '@prisma/client';
 import { PrismaClient } from '@prisma/client';
-
+import { Role } from '@prisma/client';
 @Injectable()
 export class WalletService {
   constructor(private prisma: PrismaService) {}
@@ -191,7 +191,7 @@ export class WalletService {
     });
     if (!recipient) throw new NotFoundException('Recipient not found');
 
-    const transferMode = 'DOWNLINE_ONLY'
+    const transferMode = 'DOWNLINE_ONLY';
 
     if (transferMode === 'DOWNLINE_ONLY') {
       const isDownline = await this.isInDownline(fromUserId, recipient.id);
@@ -320,13 +320,13 @@ export class WalletService {
       });
       // credit toWallet
       const toWallet = await tx.wallet.findUnique({
-        where: { 
+        where: {
           userId_type: { userId, type: toWalletType } as any,
         },
       });
       if (!toWallet) throw new NotFoundException('To wallet not found');
       const toBalance = new Decimal(toWallet.balance.toString());
-      const newToBalance = toBalance.plus(amt); 
+      const newToBalance = toBalance.plus(amt);
       await tx.wallet.update({
         where: { id: toWallet.id },
         data: { balance: newToBalance.toFixed() },
@@ -358,7 +358,6 @@ export class WalletService {
         },
       };
     });
-
   }
 
   // Withdraw request: reserve (debit) funds and create pending withdrawal entry
@@ -569,6 +568,91 @@ export class WalletService {
     });
   }
 
+  async rejectDeposit(depositRequestId: number, adminId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const dr = await tx.depositRequest.findUnique({
+        where: { id: depositRequestId },
+      });
+      if (!dr) throw new NotFoundException('Deposit request not found');
+      if (dr.status !== 'PENDING') {
+        throw new BadRequestException('Deposit already processed');
+      }
+      await tx.depositRequest.update({
+        where: { id: dr.id },
+        data: { status: 'REJECTED', approvedAt: new Date() },
+      });
+      return { ok: true };
+    });
+  }
+
+  async approveWithdrawal(withdrawalRequestId: number, adminId: number, adminNote: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const wr = await tx.withdrawalRequest.findUnique({
+        where: { id: withdrawalRequestId },
+      });
+      if (!wr) throw new NotFoundException('Withdrawal request not found');
+      if (wr.status !== 'PENDING') {
+        throw new BadRequestException('Withdrawal already processed');
+      }
+      
+      // Debit the wallet
+
+      const wallet = await tx.wallet.findUnique({ where: { id: wr.walletId } });
+      if (!wallet) throw new NotFoundException('Wallet not found');
+      const amt = new Decimal(wr.amount);
+      const bal = new Decimal(wallet.balance.toString());
+
+      if (bal.lt(amt)) {
+        throw new BadRequestException('Insufficient balance in wallet for withdrawal');
+      }
+
+      const newBalance = bal.minus(amt);
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: newBalance.toFixed() },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: wr.userId,
+          type: TransactionType.WITHDRAW,
+          amount: amt.toFixed(),
+          direction: 'DEBIT',
+          purpose: 'Withdrawal approved by admin',
+          balanceAfter: newBalance.toFixed(),
+          txNumber: generateTxNumber(),
+          meta: {
+            withdrawalRequestId: wr.id,
+            approvedBy: adminId,
+          },
+        },
+      });
+
+      await tx.withdrawalRequest.update({
+        where: { id: wr.id },
+        data: { status: 'APPROVED', updatedAt: new Date(), adminNote: adminNote },
+      });
+      return { ok: true };
+    });
+  }
+
+  async rejectWithdrawal(withdrawalRequestId: number, adminId: number, adminNote: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const wr = await tx.withdrawalRequest.findUnique({
+        where: { id: withdrawalRequestId },
+      });
+      if (!wr) throw new NotFoundException('Withdrawal request not found');
+      if (wr.status !== 'PENDING') {
+        throw new BadRequestException('Withdrawal already processed');
+      }
+      await tx.withdrawalRequest.update({
+        where: { id: wr.id },
+        data: { status: 'REJECTED', updatedAt: new Date(), adminNote: adminNote },
+      });
+      return { ok: true };
+    });
+  }
+
   async adminBonusCredit(params: {
     userId: number;
     amount: string;
@@ -614,31 +698,92 @@ export class WalletService {
 
   async getWithdrawalRequests(
     userId: number,
+    role: Role,
     skip = 0,
     take = 20,
     status?: string,
   ) {
-    const requests = await this.prisma.withdrawalRequest.findMany({
-      where: { userId, status: status ?? undefined },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take,
-    });
-    return requests;
+    if (role !== Role.ADMIN) {
+      const requests = await this.prisma.withdrawalRequest.findMany({
+        where: { userId, status: status ?? undefined },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      });
+      return requests;
+    } else {
+      const requests = await this.prisma.withdrawalRequest.findMany({
+        where: { status: status ?? undefined },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      });
+      return requests;
+    }
   }
 
   async getDepositRequests(
     userId: number,
+    role: Role,
     skip = 0,
     take = 20,
     status?: string,
   ) {
-    const requests = await this.prisma.depositRequest.findMany({
-      where: { userId, status: status ?? undefined },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take,
-    });
-    return requests;
+    if (role !== Role.ADMIN) {
+      const requests = await this.prisma.depositRequest.findMany({
+        where: { userId, status: status ?? undefined },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      });
+      return requests;
+    } else {
+      const requests = await this.prisma.depositRequest.findMany({
+        where: { status: status ?? undefined },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      });
+      return requests;
+    }
+  }
+
+  async getIncomeDetails(
+    userId: number,
+    type: TransactionType,
+    skip = 0,
+    take = 20,
+  ) {
+    const [txns, agg] = await this.prisma.$transaction([
+      this.prisma.walletTransaction.findMany({
+        where: { userId, type, direction: 'CREDIT' },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+
+      this.prisma.walletTransaction.aggregate({
+        _sum: { amount: true },
+        where: { userId, type, direction: 'CREDIT' },
+      }),
+    ]);
+
+    const total = agg._sum.amount
+      ? new Decimal(agg._sum.amount.toString()).toFixed()
+      : '0';
+
+    return {
+      total,
+      count: txns.length,
+      transactions: txns,
+    };
+  }
+
+  async getBinaryIncome(userId: number, skip = 0, take = 20) {
+    return this.getIncomeDetails(userId, TransactionType.BINARY_INCOME, skip, take);
+  }
+
+  async getDirectIncome(userId: number, skip = 0, take = 20) {
+    return this.getIncomeDetails(userId, TransactionType.ROI_CREDIT, skip, take);
   }
 }

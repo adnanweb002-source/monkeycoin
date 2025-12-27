@@ -19,7 +19,6 @@ export class WalletController {
     return this.svc.getUserWallets(req.user.id);
   }
 
-
   @UseGuards(JwtAuthGuard)
   @Post('transfer')
   async transfer(@Body() dto: any) {
@@ -28,8 +27,21 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard)
   @Post('internal-transfer')
-  async internalTransfer(@Req() req, @Body() dto: { fromWalletType: WalletType; toWalletType: WalletType; amount: string }) {
-    return this.svc.tranferFundsInternal({ userId: req.user.id, fromWalletType: dto.fromWalletType, toWalletType: dto.toWalletType, amount: dto.amount });
+  async internalTransfer(
+    @Req() req,
+    @Body()
+    dto: {
+      fromWalletType: WalletType;
+      toWalletType: WalletType;
+      amount: string;
+    },
+  ) {
+    return this.svc.tranferFundsInternal({
+      userId: req.user.id,
+      fromWalletType: dto.fromWalletType,
+      toWalletType: dto.toWalletType,
+      amount: dto.amount,
+    });
   }
 
   @UseGuards(JwtAuthGuard)
@@ -74,6 +86,35 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Post('admin/deposits/:id/reject')
+  rejectDeposit(@Param('id') id: string, @Req() req) {
+    return this.svc.rejectDeposit(Number(id), req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('admin/withdrawal/:id/approve')
+  approveWithdrawal(
+    @Param('id') id: string,
+    @Req() req,
+    @Body() body: { adminNote: string },
+  ) {
+    return this.svc.approveWithdrawal(Number(id), req.user.id, body.adminNote);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('admin/withdrawal/:id/reject')
+  rejectWithdrawal(
+    @Param('id') id: string,
+    @Req() req,
+    @Body() body: { adminNote: string },
+  ) {
+    return this.svc.rejectWithdrawal(Number(id), req.user.id, body.adminNote);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post('admin/bonus-credit')
   async bonusCredit(
     @Body() body: { userId: number; amount: string; reason?: string },
@@ -97,6 +138,7 @@ export class WalletController {
   ) {
     return this.svc.getWithdrawalRequests(
       req.user.id,
+      req.user.role,
       Number(skip) || 0,
       Number(take) || 20,
       status,
@@ -111,6 +153,7 @@ export class WalletController {
   ) {
     return this.svc.getDepositRequests(
       req.user.id,
+      req.user.role,
       body.skip ?? 0,
       body.take ?? 20,
       body.status,
@@ -127,6 +170,34 @@ export class WalletController {
       dto.walletType,
       dto.skip ?? 0,
       dto.take ?? 20,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('income/binary')
+  async getBinaryIncome(
+    @Req() req,
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.svc.getBinaryIncome(
+      req.user.id,
+      Number(skip) || 0,
+      Number(take) || 20,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('income/direct')
+  async getDirectIncome(
+    @Req() req,
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.svc.getDirectIncome(
+      req.user.id,
+      Number(skip) || 0,
+      Number(take) || 20,
     );
   }
 }

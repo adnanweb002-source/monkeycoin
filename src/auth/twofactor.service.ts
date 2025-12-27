@@ -69,6 +69,8 @@ export class TwoFactorService {
 
     await this.prisma.twoFactorSecret.update({ where: { userId }, data: { enabled: true } });
 
+    await this.prisma.user.update({ where: { id: userId }, data: { isG2faEnabled: true } });
+
     await this.prisma.auditLog.create({
       data: {
         actorId: actorId ?? userId,

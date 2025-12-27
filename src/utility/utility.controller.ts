@@ -1,0 +1,47 @@
+import {
+  Controller,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  Post,
+  Get,
+  Query,
+} from '@nestjs/common';
+import { UtilityService } from './utility.service';
+import { JwtAuthGuard } from '../auth/jwt.auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '../auth/enums/role.enum';
+import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
+
+@Controller('utility')
+export class UtilityController {
+  constructor(private readonly utility: UtilityService) {}
+
+  @Post('queries')
+  @UseGuards(JwtAuthGuard)
+  submitQuery(@Req() req, @Body() dto) {
+    return this.utility.submitQuery(req.user.id, dto.message);
+  }
+
+  @Post('queries/:id/reply')
+  @Roles('ADMIN')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  replyQuery(@Param('id') id, @Body() dto, @Req() req) {
+    return this.utility.replyToQueryAdmin(req.user.id, Number(id), dto.message);
+  }
+
+  @Get('queries')
+  @UseGuards(JwtAuthGuard)
+  getUserQueries(@Req() req, @Query('skip') skip, @Query('take') take) {
+    return this.utility.getUserQueries(req.user.id, Number(skip), Number(take));
+  }
+
+  @Get('admin/queries')
+  @Roles('ADMIN')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  getAllQueries(@Query() q) {
+    return this.utility.getAllQueries(Number(q.skip), Number(q.take), q.status);
+  }
+}

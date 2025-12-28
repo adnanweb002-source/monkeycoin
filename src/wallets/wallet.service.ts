@@ -842,4 +842,35 @@ export class WalletService {
       take,
     );
   }
+
+  async getGainReport(userId: number, from?: Date, to?: Date) {
+    const where: any = {
+      userId,
+      direction: 'CREDIT',
+    };
+
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = from;
+      if (to) where.createdAt.lte = to;
+    }
+
+    const agg = await this.prisma.walletTransaction.groupBy({
+      by: ['type'],
+      where,
+      _sum: { amount: true },
+    });
+
+    const total = agg.reduce((sum, r) => {
+      return sum.plus(r._sum.amount?.toString() ?? '0');
+    }, new Decimal(0));
+
+    return {
+      total: total.toFixed(),
+      breakdown: agg.map((r) => ({
+        type: r.type,
+        amount: r._sum.amount?.toString() ?? '0',
+      })),
+    };
+  }
 }

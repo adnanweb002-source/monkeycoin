@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { CreatePackageDto } from './dto/create-package.dto';
@@ -6,17 +11,48 @@ import { UpdatePackageDto } from './dto/update-package.dto';
 import { PurchasePackageDto } from './dto/purchase-package.dto';
 import Decimal from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
-import { JwtAuthGuard } from 'src/auth/jwt.auth.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { Role } from '@prisma/client';
-import { UseGuards } from '@nestjs/common';
-import { Roles } from 'src/auth/decorators/roles.decorator';
+
 @Injectable()
 export class PackagesService {
   constructor(
     private prisma: PrismaService,
     private walletService: WalletService,
   ) {}
+
+  async addBinaryVolume(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    bv: Decimal,
+  ) {
+    let current = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, parentId: true, position: true },
+    });
+
+    while (current?.parentId) {
+      const parent = await tx.user.findUnique({
+        where: { id: current.parentId },
+        select: { id: true, position: true, leftBv: true, rightBv: true },
+      });
+
+      if (!parent) break;
+
+      const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
+
+      await tx.user.update({
+        where: { id: parent.id },
+        data: {
+          [field]: new Decimal(parent[field].toString()).plus(bv).toFixed(),
+        },
+      });
+
+      // climb upward
+      current = await tx.user.findUnique({
+        where: { id: parent.id },
+        select: { id: true, parentId: true, position: true },
+      });
+    }
+  }
 
   async createPackage(dto: CreatePackageDto) {
     return this.prisma.package.create({ data: dto });
@@ -66,6 +102,12 @@ export class PackagesService {
         purpose: `Package purchase: ${pkg.name}`,
         meta: { packageId: pkg.id, amount: amt.toFixed() },
       });
+
+      // 2️⃣ Generate BV = full amount (or percentage if required)
+      const bv = amt; // or amt.mul(0.8) if 80% BV
+
+      // 3️⃣ Propagate BV upward
+      await this.addBinaryVolume(tx, userId, bv);
 
       // Start next day
       const startDate = new Date();

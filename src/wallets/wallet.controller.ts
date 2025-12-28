@@ -202,4 +202,18 @@ export class WalletController {
       Number(take) || 20,
     );
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('income/gain-report')
+  async gainReport(
+    @Req() req,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.svc.getGainReport(
+      req.user.id,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+  }
 }

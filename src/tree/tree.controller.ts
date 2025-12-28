@@ -1,4 +1,12 @@
-import { Controller, Get, Param, ParseIntPipe, Query, NotFoundException, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Query,
+  NotFoundException,
+  Req,
+} from '@nestjs/common';
 import { TreeService } from './tree.service';
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -22,5 +30,17 @@ export class TreeController {
   @UseGuards(JwtAuthGuard)
   async getRecentDownline(@Req() req, @Query('limit') limit?: string) {
     return this.tree.getRecentDownline(req.user.id, Number(limit) || 20);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('referrals')
+  async referrals(@Req() req) {
+    return this.tree.getReferralTracking(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('downline/rank')
+  async rankDownline(@Req() req) {
+    return this.tree.rankDownlineByBV(req.user.id);
   }
 }

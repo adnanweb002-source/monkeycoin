@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import Decimal from 'decimal.js';
 
 type DbRow = {
   id: number;
@@ -146,39 +147,83 @@ export class TreeService {
   }
 
   async getRecentDownline(userId: number, limit = 20) {
-  const queue = [userId];
-  const downlineIds: number[] = [];
+    const queue = [userId];
+    const downlineIds: number[] = [];
 
-  while (queue.length) {
-    const id = queue.shift();
-    const children = await this.prisma.user.findMany({
-      where: { parentId: id },
-      select: { id: true },
-    });
+    while (queue.length) {
+      const id = queue.shift();
+      const children = await this.prisma.user.findMany({
+        where: { parentId: id },
+        select: { id: true },
+      });
 
-    for (const c of children) {
-      downlineIds.push(c.id);
-      queue.push(c.id);
+      for (const c of children) {
+        downlineIds.push(c.id);
+        queue.push(c.id);
+      }
     }
+
+    return this.prisma.user.findMany({
+      where: { id: { in: downlineIds } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        memberId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        createdAt: true,
+        sponsorId: true,
+        parentId: true,
+        position: true,
+        status: true,
+      },
+    });
   }
 
-  return this.prisma.user.findMany({
-    where: { id: { in: downlineIds } },
-    orderBy: { createdAt: 'desc' },
-    take: limit,
-    select: {
-      id: true,
-      memberId: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      createdAt: true,
-      sponsorId: true,
-      parentId: true,
-      position: true,
-      status: true,
-    },
-  });
-}
+  async getReferralTracking(userId: number) {
+    const directReferrals = await this.prisma.user.findMany({
+      where: { sponsorId: userId },
+      select: {
+        id: true,
+        memberId: true,
+        firstName: true,
+        email: true,
+        lastName: true,
+        status: true,
+        createdAt: true,
+        packagePurchases: {
+          where: { status: 'ACTIVE' },
+          select: { amount: true, packageId: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
+    return {
+      directCount: directReferrals.length,
+      directReferrals,
+    };
+  }
+
+  async rankDownlineByBV(rootUserId: number) {
+    const users = await this.prisma.user.findMany({
+      where: { parentId: rootUserId },
+      include: {
+        children: true,
+      },
+    });
+
+    // later you can recursively compute team BV
+    return users
+      .map((u) => ({
+        userId: u.id,
+        memberId: u.memberId,
+        teamBV: new Decimal(u.leftBv.toString())
+          .plus(u.rightBv.toString())
+          .toFixed(),
+      }))
+      .sort((a, b) => Number(b.teamBV) - Number(a.teamBV));
+  }
 }

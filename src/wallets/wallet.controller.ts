@@ -21,7 +21,8 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard)
   @Post('transfer')
-  async transfer(@Body() dto: any) {
+  async transfer(@Req() req, @Body() dto: any) {
+    dto.fromUserId = req.user.id;
     return this.svc.transferFunds(dto);
   }
 
@@ -167,6 +168,7 @@ export class WalletController {
 
     return this.svc.getWalletTransactions(
       req.user.id,
+      req.user.role,
       dto.walletType,
       dto.skip ?? 0,
       dto.take ?? 20,

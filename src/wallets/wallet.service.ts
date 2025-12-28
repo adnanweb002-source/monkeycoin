@@ -182,6 +182,7 @@ export class WalletService {
     twoFactorVerified?: boolean; // boolean after 2FA check
   }) {
     const { fromUserId, fromWalletType, toMemberId, amount } = params;
+    console.log('The params for transferFunds are:', params);
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
@@ -585,7 +586,11 @@ export class WalletService {
     });
   }
 
-  async approveWithdrawal(withdrawalRequestId: number, adminId: number, adminNote: string) {
+  async approveWithdrawal(
+    withdrawalRequestId: number,
+    adminId: number,
+    adminNote: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const wr = await tx.withdrawalRequest.findUnique({
         where: { id: withdrawalRequestId },
@@ -594,7 +599,7 @@ export class WalletService {
       if (wr.status !== 'PENDING') {
         throw new BadRequestException('Withdrawal already processed');
       }
-      
+
       // Debit the wallet
 
       const wallet = await tx.wallet.findUnique({ where: { id: wr.walletId } });
@@ -603,7 +608,9 @@ export class WalletService {
       const bal = new Decimal(wallet.balance.toString());
 
       if (bal.lt(amt)) {
-        throw new BadRequestException('Insufficient balance in wallet for withdrawal');
+        throw new BadRequestException(
+          'Insufficient balance in wallet for withdrawal',
+        );
       }
 
       const newBalance = bal.minus(amt);
@@ -630,13 +637,21 @@ export class WalletService {
 
       await tx.withdrawalRequest.update({
         where: { id: wr.id },
-        data: { status: 'APPROVED', updatedAt: new Date(), adminNote: adminNote },
+        data: {
+          status: 'APPROVED',
+          updatedAt: new Date(),
+          adminNote: adminNote,
+        },
       });
       return { ok: true };
     });
   }
 
-  async rejectWithdrawal(withdrawalRequestId: number, adminId: number, adminNote: string) {
+  async rejectWithdrawal(
+    withdrawalRequestId: number,
+    adminId: number,
+    adminNote: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const wr = await tx.withdrawalRequest.findUnique({
         where: { id: withdrawalRequestId },
@@ -647,7 +662,11 @@ export class WalletService {
       }
       await tx.withdrawalRequest.update({
         where: { id: wr.id },
-        data: { status: 'REJECTED', updatedAt: new Date(), adminNote: adminNote },
+        data: {
+          status: 'REJECTED',
+          updatedAt: new Date(),
+          adminNote: adminNote,
+        },
       });
       return { ok: true };
     });
@@ -680,20 +699,47 @@ export class WalletService {
 
   async getWalletTransactions(
     userId: number,
+    userRole: Role,
     walletType: WalletType,
     skip = 0,
     take = 20,
   ) {
-    const wallet = await this.getWallet(userId, walletType);
+    if (userRole !== Role.ADMIN) {
+      const wallet = await this.getWallet(userId, walletType);
 
-    const transactions = await this.prisma.walletTransaction.findMany({
-      where: { walletId: wallet.id },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take,
-    });
+      const transactions = await this.prisma.walletTransaction.findMany({
+        where: { walletId: wallet.id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      });
 
-    return transactions;
+      return transactions;
+    } else {
+      const transactions = await this.prisma.walletTransaction.findMany({
+        where: {
+          wallet: { type: walletType },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          walletId: true,
+          userId: true,
+          txNumber: true,
+          type: true,
+          direction: true,
+          amount: true,
+          purpose: true,
+          balanceAfter: true,
+          createdAt: true,
+          meta: true,
+        },
+        skip,
+        take,
+      });
+
+      return transactions;
+    }
   }
 
   async getWithdrawalRequests(
@@ -780,10 +826,20 @@ export class WalletService {
   }
 
   async getBinaryIncome(userId: number, skip = 0, take = 20) {
-    return this.getIncomeDetails(userId, TransactionType.BINARY_INCOME, skip, take);
+    return this.getIncomeDetails(
+      userId,
+      TransactionType.BINARY_INCOME,
+      skip,
+      take,
+    );
   }
 
   async getDirectIncome(userId: number, skip = 0, take = 20) {
-    return this.getIncomeDetails(userId, TransactionType.ROI_CREDIT, skip, take);
+    return this.getIncomeDetails(
+      userId,
+      TransactionType.ROI_CREDIT,
+      skip,
+      take,
+    );
   }
 }

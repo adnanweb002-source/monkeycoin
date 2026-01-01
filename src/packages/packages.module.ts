@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { PackagesCronService } from './packages.cron';
 import { TreeService } from 'src/tree/tree.service';
-import { UtilityService } from 'src/utility/utility.service';
+
 @Module({
   controllers: [PackagesController],
   providers: [PackagesService, PrismaService, WalletService, PackagesCronService, TreeService],

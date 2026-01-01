@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { Decimal } from 'decimal.js';
@@ -12,10 +13,38 @@ export class PackagesCronService {
   constructor(
     private prisma: PrismaService,
     private wallets: WalletService,
-  ) {}
+    private scheduler: SchedulerRegistry,
+  ) {
+    this.registerClosingCron();
+  }
 
-  // Runs Mon–Fri at 00:10 server time
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async registerClosingCron() {
+    const setting = await this.prisma.adminSetting.findUnique({
+      where: { key: 'BACK_OFFICE_CLOSING_TIME' },
+    });
+
+    const time = setting?.value ?? '23:59'; // fallback midnight
+    const [h, m] = time.split(':').map(Number);
+
+    // cron format: m h * * *
+    const cronExpr = `${m} ${h} * * *`;
+
+    // remove old job if exists
+    try {
+      this.scheduler.deleteCronJob('daily-package-returns-job');
+    } catch (_) {}
+
+    const job = new CronJob(cronExpr, async () => {
+      await this.runDailyReturns();
+    });
+
+    this.scheduler.addCronJob('daily-package-returns-job', job);
+    job.start();
+
+    this.log.log('Daily package returns cron registered at ' + cronExpr);
+
+  }
+
   async runDailyReturns() {
     const today = new Date();
 
@@ -31,7 +60,9 @@ export class PackagesCronService {
       where: { date: today },
     });
     if (holiday) {
-      this.log.debug(`Holiday (${holiday.title}) — skipping package earnings run`);
+      this.log.debug(
+        `Holiday (${holiday.title}) — skipping package earnings run`,
+      );
       return;
     }
 
@@ -42,7 +73,9 @@ export class PackagesCronService {
       today.getDate(),
     );
 
-    this.log.log('Running daily package credits for ' + creditDate.toDateString());
+    this.log.log(
+      'Running daily package credits for ' + creditDate.toDateString(),
+    );
 
     // Get active packages that have started and not expired
     const purchases = await this.prisma.packagePurchase.findMany({
@@ -90,7 +123,6 @@ export class PackagesCronService {
             },
           });
         });
-
       } catch (err) {
         this.log.error(
           `Package credit failed purchase=${p.id} user=${p.userId}`,

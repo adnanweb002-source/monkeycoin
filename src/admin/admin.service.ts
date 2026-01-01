@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { Status } from '@prisma/client';
+import { Status, SETTING_TYPE } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
 
@@ -34,9 +34,9 @@ export class AdminUsersService {
         isWithdrawalRestricted: true,
         externalWallets: {
           include: {
-            supportedWallet: true   // <-- fetch related wallet type
-          }
-    },
+            supportedWallet: true, // <-- fetch related wallet type
+          },
+        },
       },
     });
     const total = await this.prisma.user.count();
@@ -304,6 +304,26 @@ export class AdminUsersService {
       });
 
       return { ok: true };
+    });
+  }
+
+  async getSetting(key?: SETTING_TYPE) {
+    if (key) {
+      return await this.prisma.adminSetting.findUnique({
+        where: { key },
+      });
+    }
+    return await this.prisma.adminSetting.findMany();
+  }
+
+  async upsertSetting(key: SETTING_TYPE, value: string) {
+    await this.prisma.adminSetting.upsert({
+      where: { key },
+      update: { value },
+      create: {
+        key,
+        value,
+      },
     });
   }
 }

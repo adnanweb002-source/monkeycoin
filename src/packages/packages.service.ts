@@ -12,7 +12,7 @@ import { PurchasePackageDto } from './dto/purchase-package.dto';
 import Decimal from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
 import { TreeService } from 'src/tree/tree.service';
-
+import { SETTING_TYPE } from '@prisma/client';
 @Injectable()
 export class PackagesService {
   constructor(
@@ -41,6 +41,7 @@ export class PackagesService {
   }
 
   validateSplitConfig(
+    buyerRole: Role,
     split: Record<string, number>,
     amount: Decimal,
     rules: Record<WalletType, Decimal>,
@@ -52,12 +53,21 @@ export class PackagesService {
     if (totalPct !== 100)
       throw new BadRequestException('Split must total 100%');
 
-    // enforce minimum wallet percentages
-    for (const wallet of Object.keys(rules) as WalletType[]) {
-      const provided = new Decimal(split[wallet] ?? 0);
-      if (provided.lt(rules[wallet])) {
+    if (buyerRole !== Role.ADMIN) {
+      for (const wallet of Object.keys(rules) as WalletType[]) {
+        const provided = new Decimal(split[wallet] ?? 0);
+        if (provided.lt(rules[wallet])) {
+          throw new BadRequestException(
+            `Minimum ${rules[wallet].toFixed()}% required from ${wallet}`,
+          );
+        }
+      }
+    } else{
+      // Admin: ensure 100% split from Bonus Wallet
+      const bonusPct = new Decimal(split[WalletType.BONUS_WALLET] ?? 0);
+      if (!bonusPct.eq(100)) {
         throw new BadRequestException(
-          `Minimum ${rules[wallet].toFixed()}% required from ${wallet}`,
+          `Admin purchases must be 100% from Bonus Wallet`,
         );
       }
     }
@@ -165,7 +175,7 @@ export class PackagesService {
     const rules = await this.getPackageWalletRules();
 
     // compute wallet deductions
-    const parts = this.validateSplitConfig(dto.split, amt, rules);
+    const parts = this.validateSplitConfig(buyerRole, dto.split, amt, rules);
 
     return this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
@@ -213,13 +223,17 @@ export class PackagesService {
           select: { sponsorId: true, id: true, memberId: true },
         });
         if (user?.sponsorId) {
-          const bonus = Number(10);
+          const bonus = await this.prisma.adminSetting.findUnique({
+            where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
+          });
 
-          if (bonus > 0) {
+          const bonusAmt = new Decimal(bonus?.value ?? '0');
+
+          if (bonusAmt.gt(0)) {
             await this.walletService.creditWallet({
               userId: user.sponsorId,
               walletType: WalletType.I_WALLET,
-              amount: bonus.toString(),
+              amount: bonusAmt.toString(),
               txType: TransactionType.BINARY_INCOME,
               purpose: `Referral bonus from ${user.memberId}`,
               meta: { fromUserId: user.id, fromMemberId: user.memberId },

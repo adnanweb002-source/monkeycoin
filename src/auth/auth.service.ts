@@ -444,6 +444,8 @@ export class AuthService {
         status: true,
         isG2faEnabled: true,
         role: true,
+        leftBv: true,
+        rightBv: true,
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

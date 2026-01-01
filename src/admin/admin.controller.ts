@@ -17,6 +17,7 @@ import { Role } from '@prisma/client';
 import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
 import { PackagesCronService } from 'src/packages/packages.cron';
 import { WalletService } from 'src/wallets/wallet.service';
+import { SETTING_TYPE } from '@prisma/client';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -118,5 +119,19 @@ export class AdminController {
       req.user.id,
       req.body.confirm
     );
+  }
+
+  @Post('settings/upsert')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  upsertSetting(@Body('key') key: SETTING_TYPE, @Body('value') value: string) {
+    return this.adminService.upsertSetting(key, value);
+  }
+
+  @Get('settings/get')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  getSettings(@Query('key') key?: SETTING_TYPE) {
+    return this.adminService.getSetting(key);
   }
 }

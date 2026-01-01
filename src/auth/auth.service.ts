@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import * as argon2 from 'argon2';
@@ -7,7 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { LoginDto } from './dto/login.dto';
 import { TwoFactorService } from './twofactor.service';
 import { WalletService } from 'src/wallets/wallet.service';
-import { WalletType, TransactionType } from '@prisma/client';
+import { WalletType, TransactionType, Position } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -27,30 +32,52 @@ export class AuthService {
     return argon2.verify(hash, password);
   }
 
-  private async findAvailablePlacement(startParentId: number, position: 'LEFT' | 'RIGHT') {
-  let queue = [startParentId];
+  private async findAvailablePlacement(startParentId: number) {
+    let queue = [startParentId];
 
-  while (queue.length) {
-    const pid = queue.shift();
+    while (queue.length) {
+      const pid = queue.shift();
 
-    const existing = await this.prisma.user.findFirst({
-      where: { parentId: pid, position },
-      select: { id: true },
-    });
+      // Check LEFT slot
+      const left = await this.prisma.user.findFirst({
+        where: { parentId: pid, position: Position.LEFT },
+        select: { id: true },
+      });
 
-    if (!existing) {
-      return pid;  // slot free here
+      if (!left) {
+        return { parentId: pid, position: Position.LEFT };
+      }
+
+      // Check RIGHT slot
+      const right = await this.prisma.user.findFirst({
+        where: { parentId: pid, position: Position.RIGHT },
+        select: { id: true },
+      });
+
+      if (!right) {
+        return { parentId: pid, position: Position.RIGHT };
+      }
+
+      // Both filled → go deeper
+      queue.push(left.id);
+      queue.push(right.id);
     }
 
-    queue.push(existing.id); // go deeper
+    throw new BadRequestException('No available slot in tree');
   }
 
-  throw new BadRequestException('No available slot in tree');
-}
-
-
   async register(dto: RegisterDto, ip: string) {
-    const { firstName, lastName, phone, country, email, password, sponsorMemberId, parentMemberId, position } = dto;
+    const {
+      firstName,
+      lastName,
+      phone,
+      country,
+      email,
+      password,
+      sponsorMemberId,
+      parentMemberId,
+      position,
+    } = dto;
 
     // -----------------------------
     // 1. Unique Check
@@ -86,8 +113,8 @@ export class AuthService {
     // -----------------------------
     // 4. Resolve Parent
     // -----------------------------
-    let parentId
-    const finalPosition = (position ?? 'RIGHT') as 'LEFT' | 'RIGHT';
+    let parentId;
+    let finalPosition = (position ?? 'RIGHT') as 'LEFT' | 'RIGHT';
 
     if (parentMemberId) {
       const parent = await this.prisma.user.findUnique({
@@ -97,7 +124,10 @@ export class AuthService {
 
       parentId = parent.id;
     } else {
-      parentId = await this.findAvailablePlacement(1, finalPosition)
+      const parent = await this.findAvailablePlacement(1);
+
+      parentId = parent.parentId;
+      finalPosition = parent.position;
     }
 
     // -----------------------------
@@ -142,28 +172,9 @@ export class AuthService {
 
       console.log('New user created with ID:', newUser.id);
 
-
       console.log('Creating wallets for user ID:', newUser.id);
       // Create 4 Wallets
       await this.walletService.createWalletsForUser(tx, newUser.id);
-
-      
-      // ➜ REFERRAL BONUS
-      if (sponsorId && sponsorId !== 1) {
-        const bonus = Number(this.cfg.get('REFERRAL_BONUS') ?? 0);
-
-        if (bonus > 0) {
-          await this.walletService.creditWallet({
-            userId: sponsorId,
-            walletType: WalletType.I_WALLET,
-            amount: bonus.toString(),
-            txType: TransactionType.BINARY_INCOME,
-            purpose: `Referral bonus from ${newUser.memberId}`,
-            meta: { fromUserId: newUser.id, fromMemberId: newUser.memberId },
-          }
-          );
-        }
-      }
 
       // Audit Log
       await tx.auditLog.create({
@@ -211,14 +222,16 @@ export class AuthService {
       throw new UnauthorizedException('Account suspended. Contact support.');
     }
 
-
     const ok = await this.verifyPassword(user.passwordHash, dto.password);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
     // If 2FA enabled, verify code
     if (user.twoFactorSecret && user.twoFactorSecret.enabled) {
       if (!dto.code) throw new UnauthorizedException('2FA code required');
-      const verified = this.twoFactor.verifyCode(user.twoFactorSecret.secretEnc, dto.code);
+      const verified = this.twoFactor.verifyCode(
+        user.twoFactorSecret.secretEnc,
+        dto.code,
+      );
       if (!verified) throw new UnauthorizedException('Invalid 2FA code');
     }
 
@@ -277,7 +290,9 @@ export class AuthService {
       }) as any;
       const userId = payload.sub;
       // Find token by comparing hash
-      const tokens = await this.prisma.refreshToken.findMany({ where: { userId, revoked: false } });
+      const tokens = await this.prisma.refreshToken.findMany({
+        where: { userId, revoked: false },
+      });
 
       let match: any = null;
       for (const t of tokens) {
@@ -294,7 +309,10 @@ export class AuthService {
       if (!match) throw new UnauthorizedException('Invalid refresh token');
 
       // Issue new tokens and revoke old refresh token
-      await this.prisma.refreshToken.update({ where: { id: match.id }, data: { revoked: true } });
+      await this.prisma.refreshToken.update({
+        where: { id: match.id },
+        data: { revoked: true },
+      });
       return this.issueTokens(userId);
     } catch (e) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -303,7 +321,10 @@ export class AuthService {
 
   async logout(userId: number) {
     // Revoke all refresh tokens for user (or only current one if we tracked id)
-    await this.prisma.refreshToken.updateMany({ where: { userId, revoked: false }, data: { revoked: true } });
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revoked: false },
+      data: { revoked: true },
+    });
     await this.prisma.auditLog.create({
       data: {
         actorId: userId,
@@ -317,7 +338,10 @@ export class AuthService {
   }
 
   async changePassword(userId: number, dto: any, ip: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { twoFactorSecret: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { twoFactorSecret: true },
+    });
     if (!user) throw new UnauthorizedException('User not found');
 
     const ok = await this.verifyPassword(user.passwordHash, dto.oldPassword);
@@ -325,12 +349,18 @@ export class AuthService {
 
     // verify 2FA
     if (user.twoFactorSecret && user.twoFactorSecret.enabled) {
-      const verified = this.twoFactor.verifyCode(user.twoFactorSecret.secretEnc, dto.twoFactorCode);
+      const verified = this.twoFactor.verifyCode(
+        user.twoFactorSecret.secretEnc,
+        dto.twoFactorCode,
+      );
       if (!verified) throw new UnauthorizedException('Invalid 2FA code');
     }
 
     const newHash = await this.hashPassword(dto.newPassword);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newHash },
+    });
 
     await this.prisma.auditLog.create({
       data: {
@@ -344,27 +374,41 @@ export class AuthService {
     });
 
     // revoke refresh tokens on password change
-    await this.prisma.refreshToken.updateMany({ where: { userId, revoked: false }, data: { revoked: true } });
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revoked: false },
+      data: { revoked: true },
+    });
 
     return { ok: true };
   }
 
   async changeEmail(userId: number, dto: any, ip: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { twoFactorSecret: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { twoFactorSecret: true },
+    });
     if (!user) throw new UnauthorizedException('User not found');
 
     // verify 2FA
     if (user.twoFactorSecret && user.twoFactorSecret.enabled) {
-      const verified = this.twoFactor.verifyCode(user.twoFactorSecret.secretEnc, dto.twoFactorCode);
+      const verified = this.twoFactor.verifyCode(
+        user.twoFactorSecret.secretEnc,
+        dto.twoFactorCode,
+      );
       if (!verified) throw new UnauthorizedException('Invalid 2FA code');
     }
 
     // ensure new email not already used
-    const exist = await this.prisma.user.findUnique({ where: { email: dto.newEmail } });
+    const exist = await this.prisma.user.findUnique({
+      where: { email: dto.newEmail },
+    });
     if (exist) throw new ConflictException('Email already in use');
 
     const before = { email: user.email };
-    await this.prisma.user.update({ where: { id: userId }, data: { email: dto.newEmail } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { email: dto.newEmail },
+    });
 
     await this.prisma.auditLog.create({
       data: {

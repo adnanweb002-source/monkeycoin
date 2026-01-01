@@ -69,6 +69,7 @@ model User {
   position       Position? @default(LEFT)
   role           Role     @default(USER)
   status         Status    @default(ACTIVE)
+  isWithdrawalRestricted Boolean @default(false)
   rankId         Int?      @map("rank_id")
 
   leftBv         Decimal   @default(0) @map("left_bv")
@@ -97,7 +98,9 @@ model User {
   walletTxns      WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
   depositRequests DepositRequest[]
-  packagePurchases PackagePurchase[]
+  packagePurchases PackagePurchase[]  @relation("PurchasedUser")
+  boughtPurchases   PackagePurchase[] @relation("BuyerUser")
+  externalWallets   UserWallet[]
 
   queries Query[]
   queryReplies QueryReply[]
@@ -192,6 +195,27 @@ model Wallet {
   @@unique([userId, type])
   @@map("wallets")
 }
+
+model WalletLimit {
+  id               Int         @id @default(autoincrement())
+
+  walletType       WalletType  // F_WALLET, I_WALLET, etc.
+
+  minWithdrawal    Decimal     @default(0)   // minimum amount per withdrawal
+  maxPerTx         Decimal     @default(0)   // maximum single transaction
+
+  maxTxCount24h    Int         @default(0)   // number of withdrawals allowed in 24h
+  maxAmount24h     Decimal     @default(0)   // total withdrawable amount in 24h
+
+  isActive         Boolean     @default(true)
+
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt      @map("updated_at")
+
+  @@unique([walletType])
+  @@map("wallet_limits")
+}
+
 
 //
 // ────────────────────────────────────────────────
@@ -288,6 +312,7 @@ model Package {
 model PackagePurchase {
   id              Int      @id @default(autoincrement())
   userId          Int
+  buyerId         Int
   packageId       Int
 
   amount          Decimal
@@ -298,8 +323,10 @@ model PackagePurchase {
   status          String   // ACTIVE | COMPLETED
 
   createdAt       DateTime @default(now())
+  splitConfig Json     // { F:40, M:60 }
 
-  user    User    @relation(fields: [userId], references: [id])
+  user    User    @relation("PurchasedUser", fields: [userId], references: [id])
+  buyer   User    @relation("BuyerUser", fields: [buyerId], references: [id])
   package Package @relation(fields: [packageId], references: [id])
 
   packageIncomeLog PackageIncomeLog[]
@@ -351,3 +378,57 @@ model PackageIncomeLog {
   @@unique([purchaseId, creditDate]) // prevents double credit
   @@map("package_income_logs")
 }
+
+
+model PackageWalletConfig {
+  id              Int      @id @default(autoincrement())
+  wallet          WalletType
+  minPct          Decimal
+
+  createdAt DateTime @default(now()) 
+  @@unique(wallet) 
+}
+
+model SupportedWallet {
+  id                 Int       @id @default(autoincrement())
+  name               String
+  currency           String
+  allowedChangeCount Int       @default(3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userWallets UserWallet[]
+
+  @@unique([name, currency])
+}
+
+model UserWallet {
+  id               Int             @id @default(autoincrement())
+  userId           Int
+  supportedWalletId Int
+  address          String
+  changeCount      Int             @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id])
+  supportedWallet SupportedWallet @relation(fields: [supportedWalletId], references: [id])
+
+  @@unique([userId, supportedWalletId])
+}
+
+model Holiday {
+  id          Int      @id @default(autoincrement())
+  title       String
+  date        DateTime
+  type        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date]) // prevents duplicate holiday entries
+  @@map("holidays")
+}
+
+

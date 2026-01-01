@@ -17,6 +17,135 @@ import { Role } from '@prisma/client';
 export class WalletService {
   constructor(private prisma: PrismaService) {}
 
+  // check if wallet can be debited (Limits)
+  async canDebitWallet(params: {
+    userId: number;
+    walletType: WalletType;
+    amount: string;
+  }) {
+    const { userId, walletType, amount } = params;
+
+    const amt = new Decimal(amount);
+    if (amt.lte(0)) {
+      return { ok: false, reason: 'Amount must be greater than zero' };
+    }
+
+    // 1) Find wallet
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId_type: { userId, type: walletType } },
+    });
+
+    if (!wallet) {
+      return { ok: false, reason: 'Wallet not found' };
+    }
+
+    const balance = new Decimal(wallet.balance.toString());
+    if (amt.gt(balance)) {
+      return { ok: false, reason: 'Insufficient wallet balance' };
+    }
+
+    // 2) Load limits
+    const limit = await this.prisma.walletLimit.findUnique({
+      where: { walletType },
+    });
+
+    if (limit && limit.isActive) {
+      if (amt.lt(limit.minWithdrawal)) {
+        return {
+          ok: false,
+          reason: `Minimum withdrawal is ${limit.minWithdrawal.toString()}`,
+        };
+      }
+
+      if (amt.gt(limit.maxPerTx)) {
+        return {
+          ok: false,
+          reason: `Maximum per transaction is ${limit.maxPerTx.toString()}`,
+        };
+      }
+
+      // 4) 24h activity checks
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const stats = await this.prisma.walletTransaction.aggregate({
+        where: {
+          userId,
+          walletId: wallet.id,
+          type: 'WITHDRAW',
+          createdAt: { gte: since },
+        },
+        _count: { id: true },
+        _sum: { amount: true },
+      });
+
+      const txCount = stats._count.id ?? 0;
+      const total24h = new Decimal(stats._sum.amount ?? 0);
+
+      if (txCount >= limit.maxTxCount24h) {
+        return {
+          ok: false,
+          reason: `Daily withdrawal limit reached (${limit.maxTxCount24h} tx allowed)`,
+        };
+      }
+
+      if (total24h.plus(amt).gt(limit.maxAmount24h)) {
+        return {
+          ok: false,
+          reason: `Daily withdrawal cap exceeded (limit ${limit.maxAmount24h.toString()})`,
+        };
+      }
+    }
+
+    // All good
+    return { ok: true, walletId: wallet.id };
+  }
+
+  // Admin: get wallet limits
+  async getWalletLimits() {
+    return this.prisma.walletLimit.findMany();
+  }
+
+  // Admin: set wallet limits
+  async upsertWalletLimit(dto: {
+    walletType: WalletType;
+    minWithdrawal: string;
+    maxPerTx: string;
+    maxTxCount24h: number;
+    maxAmount24h: string;
+    isActive: boolean;
+  }) {
+    // Validation
+    const min = new Decimal(dto.minWithdrawal);
+    const maxTx = new Decimal(dto.maxPerTx);
+    const max24 = new Decimal(dto.maxAmount24h);
+
+    if (min.lte(0))
+      throw new BadRequestException('Minimum withdrawal must be > 0');
+    if (maxTx.lt(min))
+      throw new BadRequestException('Max per transaction must be >= minimum');
+    if (max24.lt(maxTx))
+      throw new BadRequestException('24h cap must be >= max per transaction');
+
+    return this.prisma.walletLimit.upsert({
+      where: { walletType: dto.walletType },
+      update: {
+        minWithdrawal: min.toFixed(),
+        maxPerTx: maxTx.toFixed(),
+        maxTxCount24h: dto.maxTxCount24h,
+        maxAmount24h: max24.toFixed(),
+        isActive: dto.isActive,
+      },
+      create: {
+        walletType: dto.walletType,
+        minWithdrawal: min.toFixed(),
+        maxPerTx: maxTx.toFixed(),
+        maxTxCount24h: dto.maxTxCount24h,
+        maxAmount24h: max24.toFixed(),
+        isActive: dto.isActive,
+      },
+    });
+  }
+
   // create 4 wallets for a user (call during registration)
   async createWalletsForUser(
     tx: PrismaClient | Prisma.TransactionClient,
@@ -128,6 +257,11 @@ export class WalletService {
     console.log('Debit Wallet Params:', params);
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
+
+    const canDebit = await this.canDebitWallet({ userId, walletType, amount });
+    if (!canDebit.ok) {
+      throw new BadRequestException(`Cannot debit wallet: ${canDebit.reason}`);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.findFirst({
@@ -284,6 +418,10 @@ export class WalletService {
     toWalletType: WalletType;
     amount: string;
   }) {
+    return {
+      status: 'disabled',
+      message: 'Internal transfer is currently disabled',
+    }
     const { userId, fromWalletType, toWalletType, amount } = params;
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
@@ -370,8 +508,21 @@ export class WalletService {
     address?: string;
   }) {
     const { userId, walletType, amount, method, address } = params;
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.isWithdrawalRestricted) {
+      throw new ForbiddenException('Withdrawals are restricted for your account. Please contact support.');
+    }
+
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
+
+    const canDebit = await this.canDebitWallet({ userId, walletType, amount });
+    if (!canDebit.ok) {
+      throw new BadRequestException(`Cannot debit wallet: ${canDebit.reason}`);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.findUnique({
@@ -381,27 +532,6 @@ export class WalletService {
 
       const bal = new Decimal(wallet.balance.toString());
       if (bal.lt(amt)) throw new BadRequestException('Insufficient balance');
-
-      const newBalance = bal.minus(amt);
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: newBalance.toFixed() },
-      });
-
-      const txNo = generateTxNumber();
-      await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          userId,
-          type: 'WITHDRAW',
-          amount: amt.toFixed(),
-          direction: 'DEBIT',
-          purpose: 'Withdrawal requested',
-          balanceAfter: newBalance.toFixed(),
-          txNumber: txNo,
-          meta: JSON.stringify({ method, address }),
-        },
-      });
 
       const wr = await tx.withdrawalRequest.create({
         data: {
@@ -416,8 +546,7 @@ export class WalletService {
 
       return {
         withdrawalId: wr.id,
-        txNumber: txNo,
-        balanceAfter: newBalance.toFixed(),
+        balanceAfter: bal.toFixed(),
       };
     });
   }
@@ -498,24 +627,6 @@ export class WalletService {
         },
       });
 
-      // Ledger entry (NO balance change)
-      await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          userId: params.userId,
-          type: TransactionType.DEPOSIT,
-          amount: amt.toFixed(),
-          direction: 'CREDIT',
-          purpose: 'Deposit request created',
-          balanceAfter: wallet.balance, // unchanged
-          txNumber: generateTxNumber(),
-          meta: {
-            depositRequestId: deposit.id,
-            status: 'PENDING',
-          },
-        },
-      });
-
       return deposit;
     });
   }
@@ -591,6 +702,13 @@ export class WalletService {
     adminId: number,
     adminNote: string,
   ) {
+    const user = await this.prisma.user.findUnique({ where: { id: adminId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.isWithdrawalRestricted) {
+      throw new ForbiddenException('Withdrawals are restricted for this account. Please enable withdrawal and then approve.');
+    }
+    
     return this.prisma.$transaction(async (tx) => {
       const wr = await tx.withdrawalRequest.findUnique({
         where: { id: withdrawalRequestId },
@@ -847,12 +965,21 @@ export class WalletService {
     const where: any = {
       userId,
       direction: 'CREDIT',
+      type: {
+        not: TransactionType.DEPOSIT,
+      },
     };
 
     if (from || to) {
       where.createdAt = {};
-      if (from) where.createdAt.gte = from;
-      if (to) where.createdAt.lte = to;
+
+      if (from) where.createdAt.gte = new Date(from);
+
+      if (to) {
+        const end = new Date(to);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
+      }
     }
 
     const agg = await this.prisma.walletTransaction.groupBy({
@@ -872,5 +999,122 @@ export class WalletService {
         amount: r._sum.amount?.toString() ?? '0',
       })),
     };
+  }
+
+  // Admin: Supported Wallets CRUD
+  async listSupportedWallets() {
+    return this.prisma.supportedWallet.findMany();
+  }
+
+  async upsertSupportedWallet(dto: {
+    id?: number;
+    name: string;
+    currency: string;
+    allowedChangeCount: number;
+  }) {
+    return this.prisma.supportedWallet.upsert({
+      where: { id: dto.id ?? 0 },
+      update: {
+        name: dto.name,
+        currency: dto.currency,
+        allowedChangeCount: dto.allowedChangeCount,
+      },
+      create: dto,
+    });
+  }
+
+  async deleteSupportedWallet(id: number) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userWallet.deleteMany({
+        where: { supportedWalletId: id },
+      });
+      await tx.supportedWallet.delete({ where: { id } });
+
+      return { ok: true };
+    });
+  }
+
+  async adminUpdateUserWallet(dto: {
+    walletId: number;
+    address: string;
+    adminId: number;
+  }) {
+    const wallet = await this.prisma.userWallet.findUnique({
+      where: { id: dto.walletId },
+    });
+    if (!wallet) throw new NotFoundException('Wallet not found');
+
+    return this.prisma.userWallet.update({
+      where: { id: wallet.id },
+      data: { address: dto.address }, // NO increment
+    });
+  }
+
+  // User: CRUD for user wallets
+
+  async getSupportedWallets() {
+    return this.prisma.supportedWallet.findMany();
+  }
+
+  async listUserWallets(userId: number) {
+    return this.prisma.userWallet.findMany({
+      where: { userId },
+      include: { supportedWallet: true },
+    });
+  }
+
+  async createUserWallet(
+    userId: number,
+    dto: {
+      supportedWalletId: number;
+      address: string;
+    },
+  ) {
+    const sw = await this.prisma.supportedWallet.findUnique({
+      where: { id: dto.supportedWalletId },
+    });
+    if (!sw) throw new BadRequestException('Wallet type not supported');
+
+    return this.prisma.userWallet.create({
+      data: { userId, supportedWalletId: sw.id, address: dto.address },
+    });
+  }
+
+  async updateUserWallet(
+    userId: number,
+    dto: {
+      walletId: number;
+      address: string;
+    },
+  ) {
+    const wallet = await this.prisma.userWallet.findUnique({
+      where: { id: dto.walletId },
+      include: { supportedWallet: true },
+    });
+
+    if (!wallet || wallet.userId !== userId)
+      throw new NotFoundException('Wallet not found');
+
+    if (wallet.changeCount >= wallet.supportedWallet.allowedChangeCount)
+      throw new BadRequestException('Wallet change limit reached');
+
+    return this.prisma.userWallet.update({
+      where: { id: wallet.id },
+      data: {
+        address: dto.address,
+        changeCount: wallet.changeCount + 1,
+      },
+    });
+  }
+
+  async deleteUserWallet(userId: number, walletId: number) {
+    const wallet = await this.prisma.userWallet.findFirst({
+      where: { id: walletId, userId },
+    });
+
+    if (!wallet) throw new NotFoundException('Wallet not found');
+
+    await this.prisma.userWallet.delete({ where: { id: walletId } });
+    return { ok: true };
   }
 }

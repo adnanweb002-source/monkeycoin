@@ -20,12 +20,10 @@ export class UtilityService {
   }
 
   // 2️⃣ Admin reply to query
-  async replyToQueryAdmin(
-    adminId: number,
-    queryId: number,
-    message: string,
-  ) {
-    const query = await this.prisma.query.findUnique({ where: { id: queryId } });
+  async replyToQueryAdmin(adminId: number, queryId: number, message: string) {
+    const query = await this.prisma.query.findUnique({
+      where: { id: queryId },
+    });
     if (!query) throw new NotFoundException('Query not found');
 
     // Add reply
@@ -65,10 +63,45 @@ export class UtilityService {
       take,
       orderBy: { id: 'desc' },
       include: {
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        user: {
+          select: { id: true, email: true, firstName: true, lastName: true },
+        },
         replies: true,
       },
     });
   }
-}
 
+  // USER — VIEW HOLIDAYS
+  async listHolidays() {
+    return this.prisma.holiday.findMany({
+      orderBy: { date: 'asc' },
+    });
+  }
+
+  // ADMIN — CREATE / UPDATE / DELETE
+  async createHoliday(dto: { title: string; date: Date, type: string }) {
+    return this.prisma.holiday.create({ data: dto });
+  }
+
+  async updateHoliday(
+    id: number,
+    dto: Partial<{
+      title: string;
+      date: Date;
+      type: string;
+    }>,
+  ) {
+    const existing = await this.prisma.holiday.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Holiday not found');
+
+    return this.prisma.holiday.update({
+      where: { id },
+      data: dto,
+    });
+  }
+
+  async deleteHoliday(id: number) {
+    await this.prisma.holiday.delete({ where: { id } });
+    return { ok: true };
+  }
+}

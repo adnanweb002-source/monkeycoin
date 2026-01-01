@@ -31,6 +31,12 @@ export class AdminUsersService {
         role: true,
         createdAt: true,
         updatedAt: true,
+        isWithdrawalRestricted: true,
+        externalWallets: {
+          include: {
+            supportedWallet: true   // <-- fetch related wallet type
+          }
+    },
       },
     });
     const total = await this.prisma.user.count();
@@ -141,6 +147,40 @@ export class AdminUsersService {
     return { ok: true };
   }
 
+  async restrictUserWithdrawal(
+    adminId: number,
+    userId: number,
+    restrict: boolean,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new BadRequestException('User not found');
+
+    if (user.isWithdrawalRestricted === true && restrict) {
+      return { ok: true, message: `Withdrawal restriction already in place` };
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          isWithdrawalRestricted: restrict,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: restrict ? 'RESTRICT_WITHDRAWAL' : 'UNRESTRICT_WITHDRAWAL',
+          entity: 'User',
+          entityId: userId,
+        },
+      });
+    });
+
+    return { ok: true };
+  }
+
   async adminSetPassword(adminId: number, userId: number, newPassword: string) {
     const hash = await argon2.hash(newPassword);
 
@@ -198,7 +238,7 @@ export class AdminUsersService {
           status: 'ACTIVE',
           g2faSecret: '',
           isG2faEnabled: false,
-          role: 'ADMIN'
+          role: 'ADMIN',
         },
       });
 
@@ -208,5 +248,62 @@ export class AdminUsersService {
     });
 
     return { created: true, id: result.id, message: 'Company account created' };
+  }
+
+  async pruneSystem(adminId: number, confirm: string) {
+    if (!confirm) {
+      throw new BadRequestException(
+        'Prune operation not confirmed. Pass confirm=true',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // keep company root
+      const company = await tx.user.findUnique({
+        where: { memberId: 'COMPANY' },
+      });
+
+      // 1️⃣ Delete dependent tables first
+      await tx.packageIncomeLog.deleteMany({});
+      await tx.packagePurchase.deleteMany({});
+      await tx.walletTransaction.deleteMany({});
+      await tx.withdrawalRequest.deleteMany({});
+      await tx.depositRequest.deleteMany({});
+      await tx.wallet.deleteMany({
+        where: { userId: { not: company?.id ?? -1 } },
+      });
+      await tx.queryReply.deleteMany({});
+      await tx.query.deleteMany({});
+      await tx.refreshToken.deleteMany({});
+      await tx.twoFactorSecret.deleteMany({});
+      await tx.auditLog.deleteMany({});
+
+      // 2️⃣ Delete all users except COMPANY
+      await tx.user.deleteMany({
+        where: { id: { not: company?.id ?? -1 } },
+      });
+
+      // 3️⃣ Reset BV values on company account
+      if (company) {
+        await tx.user.update({
+          where: { id: company.id },
+          data: { leftBv: 0, rightBv: 0 },
+        });
+      }
+
+      // 4️⃣ Write audit event
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'SYSTEM_PRUNE',
+          entity: 'System',
+          before: {},
+          after: { pruned: true },
+        },
+      });
+
+      return { ok: true };
+    });
   }
 }

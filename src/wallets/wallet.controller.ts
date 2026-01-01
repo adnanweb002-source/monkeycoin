@@ -1,5 +1,16 @@
 // wallet.controller.ts (example)
-import { Controller, Post, Body, Param, Req, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Req,
+  Get,
+  Query,
+  Put,
+  Delete,
+  BadRequestException,
+} from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
@@ -215,5 +226,110 @@ export class WalletController {
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
     );
+  }
+
+
+  // ---- CREATE USER WALLET ----
+  @UseGuards(JwtAuthGuard)
+  @Post('/create-external-wallet')
+  async createWallet(
+    @Req() req,
+    @Body() body: { supportedWalletId: number; address: string },
+  ) {
+    if (!body.supportedWalletId || !body.address)
+      throw new BadRequestException('supportedWalletId and address required');
+
+    return this.svc.createUserWallet(req.user.id, body);
+  }
+
+  // ---- UPDATE USER WALLET (respects change limit) ----
+  @UseGuards(JwtAuthGuard)
+  @Put(':walletId/update-external-wallet')
+  async updateWallet(
+    @Req() req,
+    @Param('walletId') walletId: string,
+    @Body() body: { address: string },
+  ) {
+    return this.svc.updateUserWallet(req.user.id, {
+      walletId: Number(walletId),
+      address: body.address,
+    });
+  }
+
+  // ---- DELETE USER WALLET ----
+  @UseGuards(JwtAuthGuard)
+  @Delete(':walletId/delete-external-wallet')
+  async deleteWallet(@Req() req, @Param('walletId') walletId: string) {
+    return this.svc.deleteUserWallet(req.user.id, Number(walletId));
+  }
+
+  // ---- LIST MY WALLETS ----
+  @UseGuards(JwtAuthGuard)
+  @Get('my-external-wallets')
+  async listMyWallets(@Req() req) {
+    return this.svc.listUserWallets(req.user.id);
+  }
+
+  // ---- ADMIN: LIST SUPPORTED WALLET TYPES ----
+  @UseGuards(JwtAuthGuard)
+  @Get('admin/supported-wallet-types')
+  async listSupportedWallets() {
+    return this.svc.listSupportedWallets();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('admin/create-external-wallet-type')
+  async createWalletType(
+    @Body()
+    body: {
+      name: string;
+      currency: string;
+      allowedChangeCount: number;
+    },
+  ) {
+    return this.svc.upsertSupportedWallet(body);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Put('admin/:id/update-external-wallet-type')
+  async updateWalletType(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      name: string;
+      currency: string;
+      allowedChangeCount: number;
+    },
+  ) {
+    return this.svc.upsertSupportedWallet({
+      id: Number(id),
+      ...body,
+    });
+  }
+
+  // ---- DELETE SUPPORTED WALLET ----
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete('admin.:id/delete-external-wallet-type')
+  async deleteWalletType(@Param('id') id: string) {
+    return this.svc.deleteSupportedWallet(Number(id));
+  }
+
+  // ---- ADMIN OVERRIDE USER WALLET ----
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Put('admin/:walletId/override-external-wallet')
+  async overrideWallet(
+    @Req() req,
+    @Param('walletId') walletId: string,
+    @Body() body: { address: string },
+  ) {
+    return this.svc.adminUpdateUserWallet({
+      walletId: Number(walletId),
+      address: body.address,
+      adminId: req.user.id,
+    });
   }
 }

@@ -1,18 +1,24 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import Decimal from 'decimal.js';
+import { first } from 'rxjs';
 
 type DbRow = {
   id: number;
   first_name: string;
   last_name: string;
+  left_bv: Decimal;
+  right_bv: Decimal;
   phone_number: string | null;
   member_id: string | null;
   email: string | null;
   parent_id: number | null;
+  parent_member_id: string | null;
+  sponsor_member_id: string | null;
   position: 'LEFT' | 'RIGHT' | null;
   status: string | null;
   sponsor_id: number | null;
+  created_at: Date;
 };
 
 @Injectable()
@@ -36,110 +42,118 @@ export class TreeService {
     // Use a parameterized raw query with WITH RECURSIVE.
     // We also compute level to enforce depth on the server side.
     const rows = await this.prisma.$queryRaw<DbRow[]>`
-      WITH RECURSIVE subtree AS (
-        SELECT
-          id,
-          first_name,
-          last_name,
-          phone_number,
-          member_id,
-          email,
-          parent_id,
-          position,
-          status,
-          sponsor_id,
-          1 as lvl
-        FROM "users"
-        WHERE id = ${userId}
+    WITH RECURSIVE subtree AS (
+      SELECT 
+        u.id,
+        u.first_name,
+        u.last_name,
+        u.left_bv,
+        u.right_bv,
+        u.phone_number,
+        u.member_id,
+        u.email,
+        u.parent_id,
+        u.sponsor_id,
+        p.member_id AS parent_member_id,
+        s.member_id AS sponsor_member_id,
+        u.position,
+        u.status,
+        u.created_at,
+        1 AS lvl
+      FROM "users" u
+      LEFT JOIN "users" p ON p.id = u.parent_id
+      LEFT JOIN "users" s ON s.id = u.sponsor_id
+      WHERE u.id = ${userId}
 
-        UNION ALL
+      UNION ALL
 
-        SELECT
-          u.id,
-          u.first_name,
-          u.last_name,
-          u.phone_number,
-          u.member_id,
-          u.email,
-          u.parent_id,
-          u.position,
-          u.status,
-          u.sponsor_id,
-          s.lvl + 1
-        FROM "users" u
-        JOIN subtree s ON u.parent_id = s.id
-        WHERE s.lvl + 1 <= ${depth}
-      )
-      SELECT id, first_name, last_name, member_id, email, parent_id, position, status, sponsor_id
-      FROM subtree;
-    `;
+      SELECT 
+        u.id,
+        u.first_name,
+        u.last_name,
+        u.left_bv,
+        u.right_bv,
+        u.phone_number,
+        u.member_id,
+        u.email,
+        u.parent_id,
+        u.sponsor_id,
+        p.member_id AS parent_member_id,
+        s.member_id AS sponsor_member_id,
+        u.position,
+        u.status,
+        u.created_at,
+        sTree.lvl + 1
+      FROM "users" u
+      JOIN subtree sTree ON u.parent_id = sTree.id
+      LEFT JOIN "users" p ON p.id = u.parent_id
+      LEFT JOIN "users" s ON s.id = u.sponsor_id
+      WHERE sTree.lvl + 1 <= ${depth}
+    )
+    SELECT * FROM subtree;
+  `;
 
-    if (!rows || rows.length === 0) return null;
+    if (!rows?.length) return null;
 
-    // Build a lookup map by id
     const map = new Map<number, any>();
+
     rows.forEach((r) => {
       map.set(r.id, {
         id: r.id,
         firstName: r.first_name,
         lastName: r.last_name,
-        memberId: r.member_id ?? undefined,
+        leftBv: r.left_bv,
+        rightBv: r.right_bv,
+        memberId: r.member_id,
         email: r.email ?? undefined,
         position: r.position as 'LEFT' | 'RIGHT' | null,
         isActive: r.status === 'ACTIVE',
+
         parentId: r.parent_id ?? null,
         sponsorId: r.sponsor_id ?? null,
+
+        parentMemberId: r.parent_member_id ?? null,
+        sponsorMemberId: r.sponsor_member_id ?? null,
+
+        createdAt: r.created_at,
+
         left: null,
         right: null,
       });
     });
 
-    // Assign children based on parentId and position
+    // assign children
     for (const node of map.values()) {
-      if (node.parentId) {
-        const parent = map.get(node.parentId);
-        if (!parent) continue; // parent might be outside requested depth
-        if (node.position === 'RIGHT') {
-          parent.right = node;
-        } else {
-          // default to LEFT when null or 'LEFT'
-          parent.left = node;
-        }
-      }
+      if (!node.parentId) continue;
+      const parent = map.get(node.parentId);
+      if (!parent) continue;
+
+      if (node.position === 'RIGHT') parent.right = node;
+      else parent.left = node;
     }
 
-    // Root is the entry userId
     const root = map.get(userId);
 
-    // Populate sponsor object for root if available
-    if (root && root.sponsorId) {
-      const sponsorRow = await this.prisma.user.findUnique({
-        where: { id: root.sponsorId },
-        select: { id: true, phoneNumber: true, memberId: true },
-      });
-      if (sponsorRow) {
-        root.sponsor = {
-          id: sponsorRow.id,
-          phone: sponsorRow.phoneNumber,
-          memberId: sponsorRow.memberId,
-        };
-      }
-    }
-
-    // Convert internal structure into the TreeUser shape expected by frontend.
     const convertNode = (n: any) => {
       if (!n) return null;
       return {
         id: n.id,
-        username: n.username,
+        firstName: n.firstName,
+        lastName: n.lastName,
+        leftBv: n.leftBv,
+        rightBv: n.rightBv,
         memberId: n.memberId,
         email: n.email,
         position: n.position,
         isActive: n.isActive,
+
         parent: n.parentId ? { id: n.parentId } : null,
+
+        parentMemberId: n.parentMemberId,
+        sponsorMemberId: n.sponsorMemberId,
+
         leftChild: n.left ? convertNode(n.left) : null,
         rightChild: n.right ? convertNode(n.right) : null,
-        sponsor: n.sponsor ? n.sponsor : null,
       };
     };
 
@@ -153,7 +167,7 @@ export class TreeService {
     while (queue.length) {
       const id = queue.shift();
       const children = await this.prisma.user.findMany({
-        where: { parentId: id },
+        where: { sponsorId: id },
         select: { id: true },
       });
 

@@ -26,6 +26,15 @@ export class PackagesCronService {
       return;
     }
 
+    // Skip holidays
+    const holiday = await this.prisma.holiday.findFirst({
+      where: { date: today },
+    });
+    if (holiday) {
+      this.log.debug(`Holiday (${holiday.title}) — skipping package earnings run`);
+      return;
+    }
+
     // Normalize date (strip time)
     const creditDate = new Date(
       today.getFullYear(),
@@ -44,6 +53,8 @@ export class PackagesCronService {
       },
       include: { package: true },
     });
+
+    console.log('Found purchases for daily credit:', purchases.length);
 
     for (const p of purchases) {
       try {

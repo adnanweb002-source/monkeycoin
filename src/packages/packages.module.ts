@@ -5,10 +5,11 @@ import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { PackagesCronService } from './packages.cron';
 import { TreeService } from 'src/tree/tree.service';
+import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
 
 @Module({
   controllers: [PackagesController],
-  providers: [PackagesService, PrismaService, WalletService, PackagesCronService, TreeService],
+  providers: [PackagesService, PrismaService, WalletService, PackagesCronService, TreeService, NowPaymentsService],
   exports: [PackagesService],
 })
 export class PackagesModule {}

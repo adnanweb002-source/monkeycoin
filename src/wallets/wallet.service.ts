@@ -13,9 +13,14 @@ import { TransactionType } from '@prisma/client';
 import { WalletType } from '@prisma/client';
 import { PrismaClient } from '@prisma/client';
 import { Role } from '@prisma/client';
+import { NowPaymentsService } from './deposit-gateway.service';
+import { CreateCryptoDepositDto } from './dto/deposit.dto';
 @Injectable()
 export class WalletService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private nowPayments: NowPaymentsService,
+  ) {}
 
   // check if wallet can be debited (Limits)
   async canDebitWallet(params: {
@@ -421,7 +426,7 @@ export class WalletService {
     return {
       status: 'disabled',
       message: 'Internal transfer is currently disabled',
-    }
+    };
     const { userId, fromWalletType, toWalletType, amount } = params;
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
@@ -513,7 +518,9 @@ export class WalletService {
     if (!user) throw new NotFoundException('User not found');
 
     if (user.isWithdrawalRestricted) {
-      throw new ForbiddenException('Withdrawals are restricted for your account. Please contact support.');
+      throw new ForbiddenException(
+        'Withdrawals are restricted for your account. Please contact support.',
+      );
     }
 
     const amt = new Decimal(amount);
@@ -631,6 +638,68 @@ export class WalletService {
     });
   }
 
+  // Crypto Deposit: create deposit request via NowPayments
+  async createCryptoDeposit(userId: number, dto: CreateCryptoDepositDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const dep = await tx.externalDeposit.create({
+        data: {
+          userId,
+          status: 'pending',
+          fiatAmount: dto.amount,
+          crypto: dto.crypto,
+          paymentId:
+            new Date().getTime().toString() +
+            Math.random().toString(36).substring(2), // temp
+        },
+      });
+
+      const invoice = await this.nowPayments.createPayment({
+        userId,
+        amountUsd: dto.amount,
+        crypto: dto.crypto,
+        depositId: dep.id,
+      });
+
+      await tx.externalDeposit.update({
+        where: { id: dep.id },
+        data: {
+          paymentId: invoice.payment_id.toString(),
+          payAmount: invoice.pay_amount?.toString(),
+          address: invoice.pay_address,
+          meta: invoice,
+          status: invoice.payment_status,
+        },
+      });
+
+      const uri = `${invoice.pay_currency}:${invoice.pay_address}?amount=${invoice.pay_amount}`;
+
+      return {
+        depositId: dep.id,
+        paymentId: invoice.payment_id,
+        currency: dto.crypto,
+        address: invoice.pay_address,
+        amountCrypto: invoice.pay_amount,
+        amountFiat: invoice.price_amount,
+        uri, // frontend can turn this into QR
+        expiresAt: invoice.expiration_estimate_date,
+      };
+    });
+  }
+
+  async getDepositStatus(depositId: number, userId: number) {
+    const dep = await this.prisma.externalDeposit.findFirst({
+      where: { id: depositId, userId },
+      select: {
+        status: true,
+        payAmount: true,
+        paymentId: true,
+      },
+    });
+
+    if (!dep) throw new NotFoundException('Deposit not found');
+    return dep;
+  }
+
   // Admin: approve deposit request
 
   async approveDeposit(depositRequestId: number, adminId: number) {
@@ -706,9 +775,11 @@ export class WalletService {
     if (!user) throw new NotFoundException('User not found');
 
     if (user.isWithdrawalRestricted) {
-      throw new ForbiddenException('Withdrawals are restricted for this account. Please enable withdrawal and then approve.');
+      throw new ForbiddenException(
+        'Withdrawals are restricted for this account. Please enable withdrawal and then approve.',
+      );
     }
-    
+
     return this.prisma.$transaction(async (tx) => {
       const wr = await tx.withdrawalRequest.findUnique({
         where: { id: withdrawalRequestId },
@@ -956,6 +1027,15 @@ export class WalletService {
     return this.getIncomeDetails(
       userId,
       TransactionType.ROI_CREDIT,
+      skip,
+      take,
+    );
+  }
+
+  async getReferralIncome(userId: number, skip = 0, take = 20) {
+    return this.getIncomeDetails(
+      userId,
+      TransactionType.REFERRAL_INCOME,
       skip,
       take,
     );

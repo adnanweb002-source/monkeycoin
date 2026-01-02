@@ -10,6 +10,8 @@ import {
   Put,
   Delete,
   BadRequestException,
+  UnauthorizedException,
+  Headers,
 } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -18,11 +20,17 @@ import { UseGuards } from '@nestjs/common';
 import { TransferDto } from './dto/transfer.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
-import { WalletType } from '@prisma/client';
+import { WalletType, TransactionType } from '@prisma/client';
+import { PrismaService } from 'src/prisma.service';
+import crypto from 'crypto';
+import { CreateCryptoDepositDto } from './dto/deposit.dto';
 
 @Controller('wallet')
 export class WalletController {
-  constructor(private svc: WalletService) {}
+  constructor(
+    private svc: WalletService,
+    private prisma: PrismaService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get('user-wallets')
@@ -172,6 +180,107 @@ export class WalletController {
     );
   }
 
+  verifySignature(rawBody: string, headerSig: string) {
+    const secret: string =
+      process.env.NOWPAYMENTS_IPN_SECRET || 'default_secret';
+    const computed = crypto
+      .createHmac('sha512', secret)
+      .update(rawBody)
+      .digest('hex');
+
+    return computed === headerSig;
+  }
+
+  @Post('payments/ipn')
+  async handleIpn(@Req() req, @Headers('x-nowpayments-sig') sig: string) {
+    const raw = JSON.stringify(req.body);
+
+    if (!this.verifySignature(raw, sig))
+      throw new UnauthorizedException('Invalid signature');
+
+    const payload = req.body;
+    const { payment_id, payment_status, actually_paid, pay_currency } = payload;
+
+    await this.prisma.paymentGatewayLog.create({
+      data: { paymentId: payment_id.toString(), payload },
+    });
+
+    const dep = await this.prisma.externalDeposit.findUnique({
+      where: { paymentId: payment_id.toString() },
+    });
+
+    if (!dep) return { ok: true };
+
+    if (dep.status === 'finished') return { ok: true };
+
+    await this.prisma.externalDeposit.update({
+      where: { id: dep.id },
+      data: {
+        status: payment_status,
+        paidAmount: actually_paid?.toString(),
+        meta: payload,
+      },
+    });
+
+    if (payment_status === 'finished') {
+      await this.svc.creditWallet({
+        userId: dep.userId,
+        walletType: WalletType.F_WALLET,
+        amount: actually_paid.toString(),
+        txType: TransactionType.DEPOSIT,
+        purpose: 'Deposit via NOWPayments',
+        meta: payload,
+      });
+    }
+
+    return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('deposit/crypto')
+  createCryptoDeposit(@Req() req, @Body() dto: CreateCryptoDepositDto) {
+    return this.svc.createCryptoDeposit(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('deposit-status/:id')
+  async getDepositStatus(@Param('id') id: string, @Req() req) {
+    return this.svc.getDepositStatus(Number(id), req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('deposit/history')
+  async getMyDeposits(
+    @Req() req,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+  ) {
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const pageSize = Math.max(parseInt(limit, 10) || 10, 1);
+
+    const skip = (pageNum - 1) * pageSize;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.externalDeposit.findMany({
+        where: { userId: req.user.id },
+        skip,
+        take: pageSize,
+        orderBy: { id: 'desc' },
+      }),
+      this.prisma.externalDeposit.count({
+        where: { userId: req.user.id },
+      }),
+    ]);
+
+    return {
+      page: pageNum,
+      limit: pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+      data,
+    };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('transactions')
   async getTransactions(@Req() req, @Body() body: any) {
@@ -215,6 +324,20 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('income/referral')
+  async getReferralIncome(
+    @Req() req,
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.svc.getReferralIncome(
+      req.user.id,
+      Number(skip) || 0,
+      Number(take) || 20,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('income/gain-report')
   async gainReport(
     @Req() req,
@@ -227,7 +350,6 @@ export class WalletController {
       to ? new Date(to) : undefined,
     );
   }
-
 
   // ---- CREATE USER WALLET ----
   @UseGuards(JwtAuthGuard)
@@ -330,6 +452,44 @@ export class WalletController {
       walletId: Number(walletId),
       address: body.address,
       adminId: req.user.id,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('admin/deposits')
+  async listAllDeposits(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+  ) {
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const pageSize = Math.max(parseInt(limit, 10) || 10, 1);
+    const skip = (pageNum - 1) * pageSize;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.externalDeposit.findMany({
+        skip,
+        take: pageSize,
+        orderBy: { id: 'desc' },
+      }),
+      this.prisma.externalDeposit.count(),
+    ]);
+
+    return {
+      page: pageNum,
+      limit: pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+      data,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('admin/deposits/:id')
+  getDeposit(@Param('id') id: string) {
+    return this.prisma.externalDeposit.findUnique({
+      where: { id: Number(id) },
     });
   }
 }

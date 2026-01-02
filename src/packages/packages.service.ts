@@ -62,7 +62,7 @@ export class PackagesService {
           );
         }
       }
-    } else{
+    } else {
       // Admin: ensure 100% split from Bonus Wallet
       const bonusPct = new Decimal(split[WalletType.BONUS_WALLET] ?? 0);
       if (!bonusPct.eq(100)) {
@@ -216,12 +216,20 @@ export class PackagesService {
         },
       });
 
-      // ➜ REFERRAL BONUS
+      const user = await this.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { sponsorId: true, id: true, memberId: true },
+      });
+
+      await this.prisma.user.update({
+        where: { id: targetUserId },
+        data: {
+          activePackageCount: { increment: 1 },
+        },
+      });
+
+      // ➜ REFERRAL BONUS and PACKAGE COUNT INCREMENT
       if (buyerId == targetUserId) {
-        const user = await this.prisma.user.findUnique({
-          where: { id: targetUserId },
-          select: { sponsorId: true, id: true, memberId: true },
-        });
         if (user?.sponsorId) {
           const bonus = await this.prisma.adminSetting.findUnique({
             where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
@@ -234,7 +242,7 @@ export class PackagesService {
               userId: user.sponsorId,
               walletType: WalletType.I_WALLET,
               amount: bonusAmt.toString(),
-              txType: TransactionType.BINARY_INCOME,
+              txType: TransactionType.REFERRAL_INCOME,
               purpose: `Referral bonus from ${user.memberId}`,
               meta: { fromUserId: user.id, fromMemberId: user.memberId },
             });

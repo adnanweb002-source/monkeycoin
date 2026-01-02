@@ -19,6 +19,7 @@ type DbRow = {
   status: string | null;
   sponsor_id: number | null;
   created_at: Date;
+  active_package_count: number | null;
 };
 
 @Injectable()
@@ -59,6 +60,7 @@ export class TreeService {
         u.position,
         u.status,
         u.created_at,
+        u."activePackageCount" as active_package_count,
         1 AS lvl
       FROM "users" u
       LEFT JOIN "users" p ON p.id = u.parent_id
@@ -83,6 +85,7 @@ export class TreeService {
         u.position,
         u.status,
         u.created_at,
+        u."activePackageCount" as active_package_count,
         sTree.lvl + 1
       FROM "users" u
       JOIN subtree sTree ON u.parent_id = sTree.id
@@ -117,6 +120,8 @@ export class TreeService {
 
         createdAt: r.created_at,
 
+        active_package_count: r.active_package_count,
+
         left: null,
         right: null,
       });
@@ -146,7 +151,7 @@ export class TreeService {
         email: n.email,
         position: n.position,
         isActive: n.isActive,
-
+        activePackageCount: n.active_package_count,
         parent: n.parentId ? { id: n.parentId } : null,
 
         parentMemberId: n.parentMemberId,
@@ -154,6 +159,7 @@ export class TreeService {
 
         leftChild: n.left ? convertNode(n.left) : null,
         rightChild: n.right ? convertNode(n.right) : null,
+
       };
     };
 

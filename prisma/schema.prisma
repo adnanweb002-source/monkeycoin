@@ -44,6 +44,7 @@ enum TransactionType {
   PACKAGE_PURCHASE
   BINARY_INCOME
   DIRECT_INCOME
+  REFERRAL_INCOME
   ROI_CREDIT
   RANK_REWARD
   ADJUSTMENT
@@ -71,6 +72,7 @@ model User {
   status         Status    @default(ACTIVE)
   isWithdrawalRestricted Boolean @default(false)
   rankId         Int?      @map("rank_id")
+  activePackageCount  Int   @default(0)
 
   leftBv         Decimal   @default(0) @map("left_bv")
   rightBv        Decimal   @default(0) @map("right_bv")
@@ -102,6 +104,7 @@ model User {
   boughtPurchases   PackagePurchase[] @relation("BuyerUser")
   externalWallets   UserWallet[]
   binaryPaymentLogs  BinaryPayoutLog[]
+  externalDeposits   ExternalDeposit[]
 
   queries Query[]
   queryReplies QueryReply[]
@@ -279,6 +282,33 @@ model DepositRequest {
   @@index([userId])
   @@map("deposit_requests")
 }
+
+model ExternalDeposit {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  paymentId   String   @unique
+  status      String   // pending | waiting | confirming | finished | failed
+  fiatAmount  Decimal  // USD
+  crypto      String   // BTC, USDTTRC20 etc.
+  payAmount   Decimal? // expected crypto amount
+  paidAmount  Decimal? // actually paid
+  address     String?
+  meta        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model PaymentGatewayLog {
+  id        Int      @id @default(autoincrement())
+  paymentId String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+}
+
 
 model Package {
   id               Int      @id @default(autoincrement())

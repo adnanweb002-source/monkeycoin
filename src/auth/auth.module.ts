@@ -10,6 +10,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailService } from './mail.service';
 import { TwoFactorService } from './twofactor.service';
 import { WalletModule } from '../wallets/wallet.module';
+import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
 
 @Global()
 @Module({
@@ -34,6 +35,7 @@ import { WalletModule } from '../wallets/wallet.module';
     MailService,
     TwoFactorService,
     ConfigService,
+    NowPaymentsService
   ],
   exports: [AuthService],
 })

@@ -427,6 +427,34 @@ export class AuthService {
     return { ok: true };
   }
 
+  async changeAvatar(userId: number, dto: any, ip: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const before = user;
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarId: dto.avatarId },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'AVATAR_CHANGE',
+        entity: 'User',
+        entityId: userId,
+        ip,
+        before,
+        after: { email: dto.newEmail },
+      },
+    });
+    return { ok: true };
+  }
+
   async getProfile(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -446,6 +474,7 @@ export class AuthService {
         role: true,
         leftBv: true,
         rightBv: true,
+        avatarId: true
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

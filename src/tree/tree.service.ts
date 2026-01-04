@@ -1,7 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import Decimal from 'decimal.js';
-import { first } from 'rxjs';
 
 type DbRow = {
   id: number;
@@ -20,6 +19,7 @@ type DbRow = {
   sponsor_id: number | null;
   created_at: Date;
   active_package_count: number | null;
+  avatar_id: string;
 };
 
 @Injectable()
@@ -61,6 +61,7 @@ export class TreeService {
         u.status,
         u.created_at,
         u."activePackageCount" as active_package_count,
+        u.avatar_id,
         1 AS lvl
       FROM "users" u
       LEFT JOIN "users" p ON p.id = u.parent_id
@@ -86,6 +87,7 @@ export class TreeService {
         u.status,
         u.created_at,
         u."activePackageCount" as active_package_count,
+        u.avatar_id,
         sTree.lvl + 1
       FROM "users" u
       JOIN subtree sTree ON u.parent_id = sTree.id
@@ -121,6 +123,8 @@ export class TreeService {
         createdAt: r.created_at,
 
         active_package_count: r.active_package_count,
+
+        avatar_id: r.avatar_id,
 
         left: null,
         right: null,
@@ -160,6 +164,8 @@ export class TreeService {
         leftChild: n.left ? convertNode(n.left) : null,
         rightChild: n.right ? convertNode(n.right) : null,
 
+        avatarId: n.avatar_id,
+
       };
     };
 
@@ -198,6 +204,7 @@ export class TreeService {
         parentId: true,
         position: true,
         status: true,
+        avatarId: true
       },
     });
   }

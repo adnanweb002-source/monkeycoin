@@ -19,6 +19,7 @@ import { JwtAuthGuard } from './jwt.auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { EmailChangeDto } from './dto/email-change.dto';
 import { TwoFactorService } from './twofactor.service';
+import { AvatarChangeDto } from './dto/avatar-change.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -60,6 +61,12 @@ export class AuthController {
   @Post('change-email')
   async changeEmail(@Request() req, @Body() dto: EmailChangeDto, @Ip() ip: string) {
     return this.authService.changeEmail(req.user.id, dto, ip);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-avatar')
+  async changeAvatar(@Request() req, @Body() dto: AvatarChangeDto, @Ip() ip: string) {
+    return this.authService.changeAvatar(req.user.id, dto, ip);
   }
 
   // 2FA setup

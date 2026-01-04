@@ -73,6 +73,7 @@ model User {
   isWithdrawalRestricted Boolean @default(false)
   rankId         Int?      @map("rank_id")
   activePackageCount  Int   @default(0)
+  avatarId       String     @map("avatar_id")@default("default")
 
   leftBv         Decimal   @default(0) @map("left_bv")
   rightBv        Decimal   @default(0) @map("right_bv")

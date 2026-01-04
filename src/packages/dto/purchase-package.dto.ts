@@ -8,7 +8,7 @@ export class PurchasePackageDto {
   amount: string;
 
   @IsOptional()
-  userId?: number;
+  userId?: string;
 
   // percentage split by wallet
   split: Record<string, number>; 

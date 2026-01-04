@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { CreatePackageDto } from './dto/create-package.dto';
@@ -13,12 +13,14 @@ import Decimal from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
 import { TreeService } from 'src/tree/tree.service';
 import { SETTING_TYPE } from '@prisma/client';
+import { Logger } from '@nestjs/common';
 @Injectable()
 export class PackagesService {
   constructor(
     private prisma: PrismaService,
     private walletService: WalletService,
     private treeService: TreeService,
+    private readonly log = new Logger(PackagesService.name)
   ) {}
 
   async upsertPackageWalletRule(wallet: WalletType, minPct: Decimal) {
@@ -142,13 +144,36 @@ export class PackagesService {
     buyerRole: Role,
     dto: PurchasePackageDto, // includes split + targetUserId?
   ) {
+
+    this.log.log("BuyerID, Buyer Role and dto" + buyerId + buyerRole)
+    this.log.log(`The dto: ${dto}`)
+
+    const targetUserId = dto.userId;
+
+    let user: User | null;
+
+    if (targetUserId) {
+      this.log.log("Find user by member ID")
+      user = await this.prisma.user.findUnique({
+        where: { memberId: targetUserId },
+      });
+    } else {
+      this.log.log("Find user by user id")
+      user = await this.prisma.user.findUnique({
+        where: { id: buyerId },
+      });
+    }
+
+    if (!user){
+      throw new BadRequestException('Target user not found'); 
+    }
+
     // If the buyer is not an admin, the userId must be either the buyer themselves or someone in the downline
     if (buyerRole !== Role.ADMIN) {
-      const targetUserId = dto.userId ?? buyerId;
-      if (targetUserId !== buyerId) {
+      if (targetUserId !== user?.memberId) {
         const isDownline = await this.walletService.isInDownline(
           buyerId,
-          targetUserId,
+          user.id,
           Infinity,
         );
         if (!isDownline) {
@@ -168,8 +193,6 @@ export class PackagesService {
     if (amt.lt(pkg.investmentMin) || amt.gt(pkg.investmentMax)) {
       throw new BadRequestException('Amount not within package range');
     }
-
-    const targetUserId = dto.userId ?? buyerId; // self or someone else
 
     // fetch rule config
     const rules = await this.getPackageWalletRules();
@@ -193,7 +216,7 @@ export class PackagesService {
       // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
-      await this.addBinaryVolume(tx, targetUserId, bv);
+      await this.addBinaryVolume(tx, user.id, bv);
 
       // next-day start + duration
       const startDate = new Date();
@@ -205,7 +228,7 @@ export class PackagesService {
 
       await tx.packagePurchase.create({
         data: {
-          userId: targetUserId,
+          userId: user.id,
           buyerId,
           packageId: pkg.id,
           amount: amt.toFixed(),
@@ -216,20 +239,15 @@ export class PackagesService {
         },
       });
 
-      const user = await this.prisma.user.findUnique({
-        where: { id: targetUserId },
-        select: { sponsorId: true, id: true, memberId: true },
-      });
-
       await this.prisma.user.update({
-        where: { id: targetUserId },
+        where: { id: user.id },
         data: {
           activePackageCount: { increment: 1 },
         },
       });
 
       // ➜ REFERRAL BONUS and PACKAGE COUNT INCREMENT
-      if (buyerId == targetUserId) {
+      if (buyerId == user.id) {
         if (user?.sponsorId) {
           const bonus = await this.prisma.adminSetting.findUnique({
             where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },

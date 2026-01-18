@@ -16,11 +16,11 @@ import { SETTING_TYPE } from '@prisma/client';
 import { Logger } from '@nestjs/common';
 @Injectable()
 export class PackagesService {
+  private readonly log = new Logger(PackagesService.name);
   constructor(
     private prisma: PrismaService,
     private walletService: WalletService,
-    private treeService: TreeService,
-    private readonly log = new Logger(PackagesService.name)
+    private treeService: TreeService
   ) {}
 
   async upsertPackageWalletRule(wallet: WalletType, minPct: Decimal) {

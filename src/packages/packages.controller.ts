@@ -25,7 +25,7 @@ export class PackagesController {
 
   // -------- ADMIN: CREATE PACKAGE --------
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.USER)
+  @Roles(Role.ADMIN)
   @Post()
   create(@Body() dto: CreatePackageDto) {
     return this.service.createPackage(dto);

@@ -9,7 +9,14 @@ import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
 
 @Module({
   controllers: [PackagesController],
-  providers: [PackagesService, PrismaService, WalletService, PackagesCronService, TreeService, NowPaymentsService],
+  providers: [
+    PackagesService,
+    PrismaService,
+    WalletService,
+    PackagesCronService,
+    TreeService,
+    NowPaymentsService,
+  ],
   exports: [PackagesService],
 })
 export class PackagesModule {}

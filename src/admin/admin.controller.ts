@@ -90,7 +90,6 @@ export class AdminController {
     return this.walletService.getWalletLimits();
   }
 
-  
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('wallet-limits/upsert')
@@ -109,16 +108,13 @@ export class AdminController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   pruneSystem(@Req() req) {
-    console.log("System prune requested with body:", req.body);
+    console.log('System prune requested with body:', req.body);
     if (!req.body.confirm || req.body.confirm !== 'PRUNE') {
       throw new Error(
         "Confirmation phrase 'PRUNE' not provided in request body",
       );
     }
-    return this.adminService.pruneSystem(
-      req.user.id,
-      req.body.confirm
-    );
+    return this.adminService.pruneSystem(req.user.id, req.body.confirm);
   }
 
   @Post('settings/upsert')
@@ -133,5 +129,12 @@ export class AdminController {
   @Roles(Role.ADMIN)
   getSettings(@Query('key') key?: SETTING_TYPE) {
     return this.adminService.getSetting(key);
+  }
+
+  @Get('export-user-data')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  exportUserData() {
+    return this.adminService.exportAllUserData();
   }
 }

@@ -6,6 +6,7 @@ import {
   Request,
   Get,
   ForbiddenException,
+  UnauthorizedException,
   Param,
   Query,
   Ip,
@@ -13,7 +14,6 @@ import {
   HttpCode,
   Res,
 } from '@nestjs/common';
-import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -22,6 +22,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { EmailChangeDto } from './dto/email-change.dto';
 import { TwoFactorService } from './twofactor.service';
 import { AvatarChangeDto } from './dto/avatar-change.dto';
+import { Request as Rqst, Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -45,9 +46,9 @@ export class AuthController {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
-      domain: '.gogex.xyz',
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
       path: '/',
     };
 
@@ -68,14 +69,54 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
-  async refresh(@Body('refreshToken') refreshToken: string) {
-    return this.authService.refresh(refreshToken);
+  async refresh(@Req() req, @Res({ passthrough: true }) res) {
+    const refreshToken = req.cookies?.refresh_token;
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token missing');
+    }
+
+    const tokens = await this.authService.refresh(refreshToken);
+
+    // set new cookies
+    res.cookie('access_token', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      path: '/',
+      maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie('refresh_token', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return { ok: true };
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(@Request() req) {
-    return this.authService.logout(req.user.id);
+  async logout(@Request() req, @Res({ passthrough: true }) res) {
+    res.clearCookie('access_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+    });
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+    });
+    return {
+      ok: true,
+    };
   }
 
   @UseGuards(JwtAuthGuard)

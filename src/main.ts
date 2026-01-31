@@ -1,15 +1,26 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
+
 
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use(cookieParser());
   app.enableCors({
-    origin: "*",  // or ["https://yourfrontend.com"]
-    credentials: true,
-    methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-  });
+  origin: [
+    'https://gogex.xyz',
+    'https://admin.gogex.xyz',
+    'http://localhost:5173',
+    'http://localhost:8080', 
+    'http://localhost:3000',
+  ],
+  credentials: true,
+  methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+  allowedHeaders: 'Content-Type, Authorization',
+});
+
 
   // Health check endpoint
   app.getHttpAdapter().get('/health', (req, res) => {
@@ -18,8 +29,8 @@ async function bootstrap() {
 
 
   const config = new DocumentBuilder()
-    .setTitle('My API Docs')
-    .setDescription('API documentation for my NestJS project')
+    .setTitle('Vaultire API')
+    .setDescription('API documentation for Vaultire application')
     .setVersion('1.0')
     .addBearerAuth() // optional
     .build();

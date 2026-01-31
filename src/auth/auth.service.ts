@@ -474,10 +474,20 @@ export class AuthService {
         role: true,
         leftBv: true,
         rightBv: true,
-        avatarId: true
+        avatarId: true,
       },
     });
     if (!user) throw new UnauthorizedException('User not found');
     return user;
+  }
+
+  async getAllUserDataForExport() {
+    const allData = await this.prisma.user.findMany({
+      include: {
+        wallets: true,
+        externalWallets: true,
+      },
+    });
+    return allData;
   }
 }

@@ -7,12 +7,14 @@ import { PrismaService } from '../prisma.service';
 import { Status, SETTING_TYPE } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
+import { AuthService } from 'src/auth/auth.service';
 
 @Injectable()
 export class AdminUsersService {
   constructor(
     private prisma: PrismaService,
     private walletService: WalletService,
+    private authService: AuthService,
   ) {}
 
   async getAllUsers(take: number, skip: number) {
@@ -325,5 +327,63 @@ export class AdminUsersService {
         value,
       },
     });
+  }
+
+  private convertToCSV(rows: Record<string, any>[]) {
+    const headers = Object.keys(rows[0]);
+
+    const csvRows = [
+      headers.join(','), // header row
+      ...rows.map((row) =>
+        headers
+          .map(
+            (h) =>
+              `"${String(row[h] ?? '')
+                .replace(/"/g, '""')
+                .replace(/\n/g, ' ')}"`,
+          )
+          .join(','),
+      ),
+    ];
+
+    return csvRows.join('\n');
+  }
+
+  async exportAllUserData() {
+    const allData = await this.authService.getAllUserDataForExport();
+
+    if (!allData || allData.length === 0) {
+      return '';
+    }
+
+    // Flatten data for export
+    const rows = allData.map((u) => {
+      const walletMap = (u.wallets || []).reduce(
+        (acc, w) => {
+          acc[w.type] = w.balance.toString();
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+
+      return {
+        id: u.id,
+        memberId: u.memberId,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        phoneNumber: u.phoneNumber,
+        role: u.role,
+        status: u.status,
+        activePackageCount: u.activePackageCount,
+        mainWallet: walletMap['M_WALLET'] ?? '0',
+        incomeWallet: walletMap['I_WALLET'] ?? '0',
+        bonusWallet: walletMap['BONUS_WALLET'] ?? '0',
+        withdrawalRestricted: u.isWithdrawalRestricted,
+        createdAt: u.createdAt.toISOString(),
+      };
+    });
+
+    return this.convertToCSV(rows);
   }
 }

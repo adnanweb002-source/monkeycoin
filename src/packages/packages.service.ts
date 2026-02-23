@@ -6,6 +6,7 @@ import {
 import { Prisma, Role, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { UpdatePackageDto } from './dto/update-package.dto';
 import { PurchasePackageDto } from './dto/purchase-package.dto';
@@ -20,7 +21,8 @@ export class PackagesService {
   constructor(
     private prisma: PrismaService,
     private walletService: WalletService,
-    private treeService: TreeService
+    private treeService: TreeService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async upsertPackageWalletRule(wallet: WalletType, minPct: Decimal) {
@@ -107,6 +109,12 @@ export class PackagesService {
           [field]: new Decimal(sponsor[field].toString()).plus(bv).toFixed(),
         },
       });
+
+      await this.notificationsService.createNotification(
+        sponsor.id,
+        'Binary Volume Update',
+        `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume has increased by ${bv.toFixed()} BV due to a package purchase in your downline. Keep building your network!`,
+      );
 
       // climb upward
       current = await tx.user.findUnique({
@@ -267,6 +275,12 @@ export class PackagesService {
           }
         }
       }
+
+      await this.notificationsService.createNotification(
+        user.id,
+        'Package Purchased',
+        `You have successfully purchased the ${pkg.name} package. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
+      );
     });
   }
 

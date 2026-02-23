@@ -13,6 +13,7 @@ import { LoginDto } from './dto/login.dto';
 import { TwoFactorService } from './twofactor.service';
 import { WalletService } from 'src/wallets/wallet.service';
 import { WalletType, TransactionType, Position } from '@prisma/client';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 
 @Injectable()
 export class AuthService {
@@ -22,6 +23,7 @@ export class AuthService {
     private cfg: ConfigService,
     private twoFactor: TwoFactorService,
     private walletService: WalletService,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async hashPassword(password: string) {
@@ -188,6 +190,12 @@ export class AuthService {
           after: { created: true },
         },
       });
+
+      await this.notificationsService.createNotification(
+        newUser.id,
+        'Welcome to Monkey!',
+        `Your account has been successfully created. Your member ID is ${newUser.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
+      );
 
       return newUser;
     });
@@ -379,6 +387,12 @@ export class AuthService {
       data: { revoked: true },
     });
 
+    await this.notificationsService.createNotification(
+      userId,
+      'Password Changed',
+      'Your account password was recently changed. If you did not perform this action, please contact our support immediately.',
+    );
+
     return { ok: true };
   }
 
@@ -423,7 +437,12 @@ export class AuthService {
       },
     });
 
-    // In a real system send verification link to new email to validate before enabling.
+    await this.notificationsService.createNotification(
+      userId,
+      'Email Changed',
+      `Your account email was recently changed from ${before.email} to ${dto.newEmail}. If you did not perform this action, please contact our support immediately.`,
+    );
+
     return { ok: true };
   }
 
@@ -452,6 +471,13 @@ export class AuthService {
         after: { email: dto.newEmail },
       },
     });
+
+      await this.notificationsService.createNotification(
+        userId,
+        'Avatar Changed',
+        `Your account avatar was recently changed. If you did not perform this action, please contact our support immediately.`,
+      );
+
     return { ok: true };
   }
 

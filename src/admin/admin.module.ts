@@ -10,8 +10,10 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { TwoFactorService } from 'src/auth/twofactor.service';
 import { MailService } from 'src/auth/mail.service';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [AdminUsersController, AdminController],
   providers: [
     AdminUsersService,

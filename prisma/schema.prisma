@@ -109,6 +109,8 @@ model User {
 
   queries Query[]
   queryReplies QueryReply[]
+
+  notifications Notification[]
   @@map("users")
 }
 
@@ -485,4 +487,15 @@ model AdminSetting {
   @@map("admin_settings")
 
   @@unique([key])
+}
+
+model Notification {
+  id        Int     @id @default(autoincrement())
+  userId   Int
+  title     String
+  description String
+  createdAt   DateTime @default(now())
+  isRead     Boolean    @default(false)
+
+  user     User         @relation(fields: [userId], references: [id])
 }

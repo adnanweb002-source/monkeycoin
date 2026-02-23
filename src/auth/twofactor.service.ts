@@ -6,11 +6,11 @@ import { ConfigService } from '@nestjs/config';
 import { MailService } from './mail.service';
 import { Prisma } from '@prisma/client';
 import * as QRCode from 'qrcode';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 
 @Injectable()
 export class TwoFactorService {
-  constructor(private prisma: PrismaService, private cfg: ConfigService, private mail: MailService) {}
-
+  constructor(private prisma: PrismaService, private cfg: ConfigService, private mail: MailService, private notifications: NotificationsService) {}
   private encryptSecret(secret: string) {
     const key = this.cfg.get<string>('AES_KEY');
     if (!key) throw new Error('AES_KEY not configured');
@@ -70,6 +70,12 @@ export class TwoFactorService {
     await this.prisma.twoFactorSecret.update({ where: { userId }, data: { enabled: true } });
 
     await this.prisma.user.update({ where: { id: userId }, data: { isG2faEnabled: true } });
+
+    await this.notifications.createNotification(
+      userId,
+      '2FA Enabled',
+      'Two-factor authentication has been enabled on your account.',
+    );
 
     await this.prisma.auditLog.create({
       data: {

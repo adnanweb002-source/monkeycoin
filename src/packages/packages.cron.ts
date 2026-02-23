@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { Decimal } from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 
 @Injectable()
 export class PackagesCronService {
@@ -14,6 +15,7 @@ export class PackagesCronService {
     private prisma: PrismaService,
     private wallets: WalletService,
     private scheduler: SchedulerRegistry,
+    private notificationsService: NotificationsService,
   ) {
     this.registerClosingCron();
   }
@@ -113,6 +115,12 @@ export class PackagesCronService {
             purpose: `Daily return for package ${p.package.name}`,
             meta: { purchaseId: p.id, date: creditDate },
           });
+
+          await this.notificationsService.createNotification(
+            p.userId,
+            'Daily Package Return',
+            `Your package ${p.package.name} has generated a daily return of $${amount.toFixed()}. This amount has been credited to your M-Wallet. Keep up the good work!`,
+          );
 
           // Log credit to prevent duplicates
           await tx.packageIncomeLog.create({

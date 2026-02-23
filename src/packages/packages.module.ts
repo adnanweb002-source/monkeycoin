@@ -6,8 +6,10 @@ import { WalletService } from '../wallets/wallet.service';
 import { PackagesCronService } from './packages.cron';
 import { TreeService } from 'src/tree/tree.service';
 import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [PackagesController],
   providers: [
     PackagesService,

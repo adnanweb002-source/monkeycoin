@@ -4,19 +4,31 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 import { QueryStatus } from '@prisma/client';
+
 
 @Injectable()
 export class UtilityService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   // 1️⃣ Submit a query (User)
   async submitQuery(userId: number, message: string) {
     if (!message?.trim()) throw new BadRequestException('Message is required');
 
-    return this.prisma.query.create({
+    this.prisma.query.create({
       data: { userId, message },
     });
+
+    await this.notificationsService.createNotification(
+      userId,
+      'Query Submitted',
+      'Your query has been submitted successfully. Our support team will get back to you shortly.',
+    );
+    return { ok: true, message: 'Query submitted successfully' };
   }
 
   // 2️⃣ Admin reply to query
@@ -40,6 +52,12 @@ export class UtilityService {
       where: { id: queryId },
       data: { status: 'CLOSED', updatedAt: new Date() },
     });
+
+    await this.notificationsService.createNotification(
+      query.userId,
+      'Query Answered',
+      'Your query has been answered by our support team. Please check the response and let us know if you have any further questions.',
+    );
 
     return reply;
   }

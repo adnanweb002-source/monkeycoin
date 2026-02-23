@@ -6,6 +6,7 @@ import { WalletType, TransactionType } from '@prisma/client';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { Logger } from '@nestjs/common/services/logger.service';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 
 @Injectable()
 export class BinaryEngineService {
@@ -14,6 +15,7 @@ export class BinaryEngineService {
     private prisma: PrismaService,
     private walletService: WalletService,
     private scheduler: SchedulerRegistry,
+    private notificationsService: NotificationsService,
   ) {
     this.registerClosingCron();
   }
@@ -171,6 +173,12 @@ export class BinaryEngineService {
           rightBv: right.minus(weak).toFixed(),
         },
       });
+
+      await this.notificationsService.createNotification(
+        user.id,
+        'Binary Income Credited',
+        `Your binary income of $${payout.toFixed()} has been credited to your M-Wallet for ${creditDate.toDateString()}. Keep up the good work!`,
+      );
 
       // 3️⃣ Log payout
       await tx.binaryPayoutLog.create({

@@ -7,10 +7,11 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { LocalStrategy } from './local.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MailService } from './mail.service';
+import { MailService } from './mail.service';   
 import { TwoFactorService } from './twofactor.service';
 import { WalletModule } from '../wallets/wallet.module';
 import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Global()
 @Module({
@@ -25,6 +26,7 @@ import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
         signOptions: { expiresIn: cfg.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m' },
       }),
     }),
+      NotificationsModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -35,7 +37,7 @@ import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
     MailService,
     TwoFactorService,
     ConfigService,
-    NowPaymentsService
+    NowPaymentsService,
   ],
   exports: [AuthService],
 })

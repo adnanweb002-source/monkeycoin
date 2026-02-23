@@ -15,11 +15,13 @@ import { PrismaClient } from '@prisma/client';
 import { Role } from '@prisma/client';
 import { NowPaymentsService } from './deposit-gateway.service';
 import { CreateCryptoDepositDto } from './dto/deposit.dto';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 @Injectable()
 export class WalletService {
   constructor(
     private prisma: PrismaService,
     private nowPayments: NowPaymentsService,
+    private notificationsService: NotificationsService,
   ) {}
 
   // check if wallet can be debited (Limits)
@@ -232,6 +234,12 @@ export class WalletService {
         },
       });
 
+      await this.notificationsService.createNotification(
+        userId,
+        'Wallet Credited',
+        `Your ${walletType} wallet has been credited with ${amt.toFixed()} units.`,
+      );
+
       return {
         walletId: wallet.id,
         balanceAfter: newBalance.toFixed(),
@@ -302,6 +310,12 @@ export class WalletService {
         },
       });
 
+      await this.notificationsService.createNotification(
+        userId,
+        'Wallet Debited',
+        `Your ${walletType} wallet has been debited by ${amt.toFixed()} units.`,
+      );
+
       return {
         walletId: wallet.id,
         balanceAfter: newBalance.toFixed(),
@@ -330,6 +344,12 @@ export class WalletService {
       where: { memberId: toMemberId },
     });
     if (!recipient) throw new NotFoundException('Recipient not found');
+
+    // Find sender for auth checks
+    const sender = await this.prisma.user.findUnique({
+      where: { id: fromUserId },
+    });
+    if (!sender) throw new NotFoundException('Sender not found');
 
     const transferMode = 'DOWNLINE_ONLY';
 
@@ -401,6 +421,18 @@ export class WalletService {
           meta: JSON.stringify({ fromUserId }),
         },
       });
+
+      await this.notificationsService.createNotification(
+        fromUserId,
+        'Transfer Sent',
+        `You have transferred ${amt.toFixed()} units to ${recipient.memberId}.`,
+      );
+
+      await this.notificationsService.createNotification(
+        recipient.id,
+        'Transfer Received',
+        `You have received ${amt.toFixed()} units from ${sender.memberId}.`,
+      );
 
       return {
         from: {
@@ -551,6 +583,12 @@ export class WalletService {
         },
       });
 
+      await this.notificationsService.createNotification(
+        userId,
+        'Withdrawal Requested',
+        `Your withdrawal request of ${amt.toFixed()} units via ${method} has been created and is pending approval. We will notify you once it is processed.`,
+      );
+
       return {
         withdrawalId: wr.id,
         balanceAfter: bal.toFixed(),
@@ -566,7 +604,13 @@ export class WalletService {
     meta?: any;
   }) {
     const { userId, amount, externalTxId, meta } = params;
-    // credit F_WALLET; tx type DEPOSIT
+
+    await this.notificationsService.createNotification(
+      userId,
+      'Deposit Confirmed',
+      `Your deposit of ${amount} has been confirmed and credited to your F-Wallet. Thank you for your patience!`,
+    );
+
     return this.creditWallet({
       userId,
       walletType: 'F_WALLET',
@@ -673,6 +717,12 @@ export class WalletService {
 
       const uri = `${invoice.pay_currency}:${invoice.pay_address}?amount=${invoice.pay_amount}`;
 
+      await this.notificationsService.createNotification(
+        userId,
+        'Deposit Initiated',
+        `Your deposit of ${invoice.pay_amount} ${invoice.pay_currency} has been initiated. Please complete the payment to the address provided.`,
+      );
+
       return {
         depositId: dep.id,
         paymentId: invoice.payment_id,
@@ -745,6 +795,12 @@ export class WalletService {
         data: { status: 'APPROVED', approvedAt: new Date() },
       });
 
+      await this.notificationsService.createNotification(
+        dr.userId,
+        'Deposit Approved',
+        `Your deposit request of ${amt.toFixed()} units has been approved and credited to your wallet.`,
+      );
+
       return { ok: true };
     });
   }
@@ -762,6 +818,14 @@ export class WalletService {
         where: { id: dr.id },
         data: { status: 'REJECTED', approvedAt: new Date() },
       });
+
+
+        await this.notificationsService.createNotification(
+          dr.userId,
+          'Deposit Rejected',
+          `Your deposit request of ${dr.amount} units has been rejected. Please contact support for more information.`,
+        );
+
       return { ok: true };
     });
   }
@@ -832,6 +896,12 @@ export class WalletService {
           adminNote: adminNote,
         },
       });
+      await this.notificationsService.createNotification(
+        wr.userId,
+        'Withdrawal Approved',
+        `Your withdrawal request of ${amt.toFixed()} units has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
+      );
+
       return { ok: true };
     });
   }
@@ -857,6 +927,11 @@ export class WalletService {
           adminNote: adminNote,
         },
       });
+      await this.notificationsService.createNotification(
+        wr.userId,
+        'Withdrawal Rejected',
+        `Your withdrawal request of ${wr.amount} units has been rejected. Please contact support for more information.`,
+      );
       return { ok: true };
     });
   }
@@ -874,6 +949,13 @@ export class WalletService {
     if (!user || user.status !== 'ACTIVE') {
       throw new ForbiddenException('User account is not active');
     }
+
+    await this.notificationsService.createNotification(
+      params.userId,
+      'Bonus Credit',
+      `Your account has been credited with a bonus of ${params.amount} units. Reason: ${params.reason ?? 'Admin credit'}.`,
+    );
+
     return this.creditWallet({
       userId: params.userId,
       walletType: WalletType.BONUS_WALLET,
@@ -1155,6 +1237,12 @@ export class WalletService {
     });
     if (!sw) throw new BadRequestException('Wallet type not supported');
 
+    await this.notificationsService.createNotification(
+      userId,
+      'Wallet Added',
+      `You have added a new wallet (${sw.name}) to your account. You can manage your wallets in the profile section.`,
+    );
+
     return this.prisma.userWallet.create({
       data: { userId, supportedWalletId: sw.id, address: dto.address },
     });
@@ -1178,6 +1266,12 @@ export class WalletService {
     if (wallet.changeCount >= wallet.supportedWallet.allowedChangeCount)
       throw new BadRequestException('Wallet change limit reached');
 
+    await this.notificationsService.createNotification(
+      userId,
+      'Wallet Updated',
+      `You have updated the address for your ${wallet.supportedWallet.name} wallet. If you did not make this change, please contact support immediately.`,
+    );
+
     return this.prisma.userWallet.update({
       where: { id: wallet.id },
       data: {
@@ -1195,6 +1289,12 @@ export class WalletService {
     if (!wallet) throw new NotFoundException('Wallet not found');
 
     await this.prisma.userWallet.delete({ where: { id: walletId } });
+    await this.notificationsService.createNotification(
+      userId,
+      'Wallet Deleted',
+      `You have deleted a wallet from your account. If you did not make this change, please contact support immediately.`,
+    );
+    
     return { ok: true };
   }
 }

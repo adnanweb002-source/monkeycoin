@@ -1,10 +1,14 @@
 import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { NotificationsService } from 'src/notifications/notifcations.service';
 
 @Injectable()
 export class NowPaymentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   private api = process.env.NOWPAYMENTS_BASE;
   private key = process.env.NOWPAYMENTS_API_KEY;
@@ -25,6 +29,12 @@ export class NowPaymentsService {
         ipn_callback_url: `${process.env.BASE_URL}/payments/ipn`,
       },
       { headers: { 'x-api-key': this.key } },
+    );
+
+    await this.notificationsService.createNotification(
+      params.userId,
+      'Payment Created',
+      `Your payment of ${params.amountUsd} USD in ${params.crypto} has been initiated. Please complete the payment to credit your F-Wallet.`,
     );
 
     return res.data;

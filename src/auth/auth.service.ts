@@ -142,6 +142,8 @@ export class AuthService {
       },
     });
 
+    console.log(`Checking slot for parentId ${parentId} and position ${finalPosition}:`, slotTaken);
+
     if (slotTaken) {
       throw new BadRequestException(
         `Position ${finalPosition} under parent ${parentMemberId ?? 'COMPANY'} is already occupied.`,
@@ -190,15 +192,14 @@ export class AuthService {
           after: { created: true },
         },
       });
-
-      await this.notificationsService.createNotification(
-        newUser.id,
-        'Welcome to Monkey!',
-        `Your account has been successfully created. Your member ID is ${newUser.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
-      );
-
       return newUser;
     });
+
+     await this.notificationsService.createNotification(
+        result.id,
+        'Welcome to Monkey!',
+        `Your account has been successfully created. Your member ID is ${result.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
+      );
 
     // -----------------------------
     // 7. Return Response

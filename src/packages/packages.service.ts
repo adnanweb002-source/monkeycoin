@@ -147,6 +147,18 @@ export class PackagesService {
     });
   }
 
+  private parseRate(value?: string | null): Decimal {
+  if (!value) return new Decimal(0);
+
+  const raw = value.trim();
+
+  if (raw.endsWith('%')) {
+    return new Decimal(raw.replace('%', '')).div(100);
+  }
+
+  return new Decimal(raw);
+}
+
   async purchasePackage(
     buyerId: number, // person paying
     buyerRole: Role,
@@ -261,7 +273,9 @@ export class PackagesService {
             where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
           });
 
-          const bonusAmt = new Decimal(bonus?.value ?? '0');
+          const bonusRate = this.parseRate(bonus?.value);
+
+          const bonusAmt = amt.mul(bonusRate);
 
           if (bonusAmt.gt(0)) {
             await this.walletService.creditWallet({

@@ -7,6 +7,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { Logger } from '@nestjs/common/services/logger.service';
 import { NotificationsService } from 'src/notifications/notifcations.service';
+import {SETTING_TYPE} from '@prisma/client';
 
 @Injectable()
 export class BinaryEngineService {
@@ -90,18 +91,30 @@ export class BinaryEngineService {
     }
   }
 
+  private parseRate(value?: string | null): Decimal {
+    if (!value) return new Decimal(0);
+
+    const raw = value.trim();
+
+    if (raw.endsWith('%')) {
+      return new Decimal(raw.replace('%', '')).div(100);
+    }
+
+    return new Decimal(raw);
+  }
+
+
   /** -------- Read binary % from AdminSetting -------- */
   private async getBinaryRate(): Promise<Decimal> {
     const setting = await this.prisma.adminSetting.findUnique({
-      where: { key: 'BINARY_INCOME_RATE' },
+      where: { key: SETTING_TYPE.BINARY_INCOME_RATE },
     });
 
     if (!setting) {
       throw new Error('Binary income rate not configured');
     }
 
-    // stored as string like "10" = 10%
-    return new Decimal(setting.value).div(100);
+    return this.parseRate(setting.value);
   }
 
   /** -------- Resolve credit date using closing time -------- */

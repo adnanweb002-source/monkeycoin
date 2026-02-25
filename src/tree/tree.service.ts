@@ -165,7 +165,6 @@ export class TreeService {
         rightChild: n.right ? convertNode(n.right) : null,
 
         avatarId: n.avatar_id,
-
       };
     };
 
@@ -204,9 +203,63 @@ export class TreeService {
         parentId: true,
         position: true,
         status: true,
-        avatarId: true
+        avatarId: true,
       },
     });
+  }
+
+  async getDownlineDepositFunds(userId: number, page = 1, pageSize = 20) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { memberId: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    const memberId = user.memberId;
+
+    const downLineDeposits = await this.prisma.externalDeposit.findMany({
+      where: {
+        user: {
+          sponsor: { memberId: memberId },
+        },
+        status: 'finished',
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    const total = await this.prisma.externalDeposit.count({
+      where: {
+        user: {
+          sponsor: { memberId: memberId },
+        },
+        status: 'finished',
+      },
+    });
+
+    const totalPages = Math.ceil(total / pageSize);
+
+    const totalAmount = await this.prisma.externalDeposit.aggregate({
+      where: {
+        user: {
+          sponsor: { memberId: memberId },
+        },
+        status: 'finished',
+      },
+      _sum: { paidAmount: true },
+    });
+
+    return {
+      data: downLineDeposits,
+      totalAmount: totalAmount._sum.paidAmount || 0,
+      total,
+      page,
+      totalPages,
+    };
   }
 
   async getReferralTracking(userId: number) {

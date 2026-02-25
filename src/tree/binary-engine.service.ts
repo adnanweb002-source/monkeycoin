@@ -191,6 +191,7 @@ export class BinaryEngineService {
         user.id,
         'Binary Income Credited',
         `Your binary income of $${payout.toFixed()} has been credited to your M-Wallet for ${creditDate.toDateString()}. Keep up the good work!`,
+        '/income/binary',
       );
 
       // 3️⃣ Log payout

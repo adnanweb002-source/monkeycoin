@@ -238,6 +238,7 @@ export class WalletService {
         userId,
         'Wallet Credited',
         `Your ${walletType} wallet has been credited with ${amt.toFixed()} units.`,
+        '/wallet/transactions',
       );
 
       return {
@@ -314,6 +315,7 @@ export class WalletService {
         userId,
         'Wallet Debited',
         `Your ${walletType} wallet has been debited by ${amt.toFixed()} units.`,
+        '/wallet/transactions',
       );
 
       return {
@@ -426,12 +428,14 @@ export class WalletService {
         fromUserId,
         'Transfer Sent',
         `You have transferred ${amt.toFixed()} units to ${recipient.memberId}.`,
+        '/wallet/transactions',
       );
 
       await this.notificationsService.createNotification(
         recipient.id,
         'Transfer Received',
         `You have received ${amt.toFixed()} units from ${sender.memberId}.`,
+        '/wallet/transactions',
       );
 
       return {
@@ -587,6 +591,7 @@ export class WalletService {
         userId,
         'Withdrawal Requested',
         `Your withdrawal request of ${amt.toFixed()} units via ${method} has been created and is pending approval. We will notify you once it is processed.`,
+        '/wallet/withdrawal-requests',
       );
 
       return {
@@ -609,6 +614,7 @@ export class WalletService {
       userId,
       'Deposit Confirmed',
       `Your deposit of ${amount} has been confirmed and credited to your F-Wallet. Thank you for your patience!`,
+      '/wallet/deposit-history',
     );
 
     return this.creditWallet({
@@ -799,6 +805,7 @@ export class WalletService {
         dr.userId,
         'Deposit Approved',
         `Your deposit request of ${amt.toFixed()} units has been approved and credited to your wallet.`,
+        '/wallet/deposit-history',
       );
 
       return { ok: true };
@@ -824,6 +831,7 @@ export class WalletService {
           dr.userId,
           'Deposit Rejected',
           `Your deposit request of ${dr.amount} units has been rejected. Please contact support for more information.`,
+          '/wallet/deposit-history',
         );
 
       return { ok: true };
@@ -900,6 +908,7 @@ export class WalletService {
         wr.userId,
         'Withdrawal Approved',
         `Your withdrawal request of ${amt.toFixed()} units has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
+        '/wallet/withdrawal-requests',
       );
 
       return { ok: true };
@@ -930,7 +939,8 @@ export class WalletService {
       await this.notificationsService.createNotification(
         wr.userId,
         'Withdrawal Rejected',
-        `Your withdrawal request of ${wr.amount} units has been rejected. Please contact support for more information.`,
+        `Your withdrawal request of ${wr.amount} units has been rejected. The reason is: ${adminNote}. Please contact support for more information.`,
+        '/wallet/withdrawal-requests',
       );
       return { ok: true };
     });
@@ -954,6 +964,7 @@ export class WalletService {
       params.userId,
       'Bonus Credit',
       `Your account has been credited with a bonus of ${params.amount} units. Reason: ${params.reason ?? 'Admin credit'}.`,
+      '/wallet/transactions',
     );
 
     return this.creditWallet({
@@ -1241,6 +1252,7 @@ export class WalletService {
       userId,
       'Wallet Added',
       `You have added a new wallet (${sw.name}) to your account. You can manage your wallets in the profile section.`,
+      '/profile?tab=wallets',
     );
 
     return this.prisma.userWallet.create({
@@ -1270,6 +1282,7 @@ export class WalletService {
       userId,
       'Wallet Updated',
       `You have updated the address for your ${wallet.supportedWallet.name} wallet. If you did not make this change, please contact support immediately.`,
+      '/profile?tab=wallets',
     );
 
     return this.prisma.userWallet.update({
@@ -1293,6 +1306,7 @@ export class WalletService {
       userId,
       'Wallet Deleted',
       `You have deleted a wallet from your account. If you did not make this change, please contact support immediately.`,
+      '/profile?tab=wallets',
     );
     
     return { ok: true };

@@ -43,4 +43,12 @@ export class TreeController {
   async rankDownline(@Req() req) {
     return this.tree.rankDownlineByBV(req.user.id);
   }
+  
+  @UseGuards(JwtAuthGuard)
+  @Get('downline/deposit-funds')
+  async getDownlineDepositFunds(@Req() req, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
+    return this.tree.getDownlineDepositFunds(req.user.id, pageNum, pageSizeNum);
+  }
 }

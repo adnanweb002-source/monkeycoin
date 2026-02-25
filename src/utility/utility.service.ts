@@ -27,6 +27,7 @@ export class UtilityService {
       userId,
       'Query Submitted',
       'Your query has been submitted successfully. Our support team will get back to you shortly.',
+      '/support'
     );
     return { ok: true, message: 'Query submitted successfully' };
   }
@@ -57,6 +58,7 @@ export class UtilityService {
       query.userId,
       'Query Answered',
       'Your query has been answered by our support team. Please check the response and let us know if you have any further questions.',
+      '/support'
     );
 
     return reply;

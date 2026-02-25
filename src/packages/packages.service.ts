@@ -114,6 +114,7 @@ export class PackagesService {
         sponsor.id,
         'Binary Volume Update',
         `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume has increased by ${bv.toFixed()} BV due to a package purchase in your downline. Keep building your network!`,
+        '/reports/track-referral',
       );
 
       // climb upward
@@ -148,44 +149,43 @@ export class PackagesService {
   }
 
   private parseRate(value?: string | null): Decimal {
-  if (!value) return new Decimal(0);
+    if (!value) return new Decimal(0);
 
-  const raw = value.trim();
+    const raw = value.trim();
 
-  if (raw.endsWith('%')) {
-    return new Decimal(raw.replace('%', '')).div(100);
+    if (raw.endsWith('%')) {
+      return new Decimal(raw.replace('%', '')).div(100);
+    }
+
+    return new Decimal(raw);
   }
-
-  return new Decimal(raw);
-}
 
   async purchasePackage(
     buyerId: number, // person paying
     buyerRole: Role,
     dto: PurchasePackageDto, // includes split + targetUserId?
   ) {
-
-    this.log.log("BuyerID, Buyer Role and dto" + buyerId + buyerRole)
-    this.log.log(`The dto: ${dto}`)
+    this.log.log('BuyerID, Buyer Role and dto' + buyerId + buyerRole);
+    this.log.log(`The dto: ${dto}`);
 
     const targetUserId = dto.userId;
 
     let user: User | null;
 
     if (targetUserId) {
-      this.log.log("Find user by member ID")
+      this.log.log('Find user by member ID');
       user = await this.prisma.user.findUnique({
         where: { memberId: targetUserId },
       });
     } else {
-      this.log.log("Find user by user id")
+      this.log.log('Find user by user id');
       user = await this.prisma.user.findUnique({
         where: { id: buyerId },
       });
     }
 
-    if (!user){
-      throw new BadRequestException('Target user not found'); 
+    if (!user) {
+      throw new BadRequestException('Target user not found');
     }
 
     // If the buyer is not an admin, the userId must be either the buyer themselves or someone in the downline
@@ -294,6 +294,7 @@ export class PackagesService {
         user.id,
         'Package Purchased',
         `You have successfully purchased the ${pkg.name} package. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
+        '/profile?tab=packages',
       );
     });
   }

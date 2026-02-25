@@ -16,17 +16,20 @@ export class NotificationsService {
     userId: number,
     title: string,
     description: string,
+    redirectionRoute?: string,
   ) {
     const notification = await this.prisma.notification.create({
       data: {
         userId,
         title,
         description,
+        redirectionRoute,
       },
     });
+    this.logger.log(`Created notification for user ${userId}: ${title}`);
 
-    // 🔥 Realtime push
     this.gateway.emitToUser(userId, notification);
+
 
     return notification;
   }

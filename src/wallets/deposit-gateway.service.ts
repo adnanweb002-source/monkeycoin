@@ -35,6 +35,7 @@ export class NowPaymentsService {
       params.userId,
       'Payment Created',
       `Your payment of ${params.amountUsd} USD in ${params.crypto} has been initiated. Please complete the payment to credit your F-Wallet.`,
+      '/wallets/deposit-history',
     );
 
     return res.data;

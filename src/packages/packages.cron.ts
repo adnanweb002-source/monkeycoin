@@ -120,6 +120,7 @@ export class PackagesCronService {
             p.userId,
             'Daily Package Return',
             `Your package ${p.package.name} has generated a daily return of $${amount.toFixed()}. This amount has been credited to your M-Wallet. Keep up the good work!`,
+            '/income/direct',
           );
 
           // Log credit to prevent duplicates

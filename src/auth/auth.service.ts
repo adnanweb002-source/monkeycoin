@@ -441,6 +441,8 @@ export class AuthService {
       userId,
       'Email Changed',
       `Your account email was recently changed from ${before.email} to ${dto.newEmail}. If you did not perform this action, please contact our support immediately.`,
+      '/profile?tab=settings',
+
     );
 
     return { ok: true };
@@ -476,6 +478,7 @@ export class AuthService {
         userId,
         'Avatar Changed',
         `Your account avatar was recently changed. If you did not perform this action, please contact our support immediately.`,
+        '/profile?tab=avatar',
       );
 
     return { ok: true };

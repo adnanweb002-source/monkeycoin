@@ -75,6 +75,7 @@ export class TwoFactorService {
       userId,
       '2FA Enabled',
       'Two-factor authentication has been enabled on your account.',
+      '/profile?tab=security',
     );
 
     await this.prisma.auditLog.create({

@@ -496,6 +496,6 @@ model Notification {
   description String
   createdAt   DateTime @default(now())
   isRead     Boolean    @default(false)
-
+  redirectionRoute  String  @default("")
   user     User         @relation(fields: [userId], references: [id])
 }

@@ -19,7 +19,7 @@ export class UtilityService {
   async submitQuery(userId: number, message: string) {
     if (!message?.trim()) throw new BadRequestException('Message is required');
 
-    this.prisma.query.create({
+    await this.prisma.query.create({
       data: { userId, message },
     });
 

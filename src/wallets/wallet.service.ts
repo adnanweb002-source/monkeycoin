@@ -237,7 +237,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         userId,
         'Wallet Credited',
-        `Your ${walletType} wallet has been credited with ${amt.toFixed()} units.`,
+        `Your ${walletType} wallet has been credited with $${amt.toFixed()}.`,
         '/wallet/transactions',
       );
 
@@ -314,7 +314,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         userId,
         'Wallet Debited',
-        `Your ${walletType} wallet has been debited by ${amt.toFixed()} units.`,
+        `Your ${walletType} wallet has been debited by $${amt.toFixed()}  .`,
         '/wallet/transactions',
       );
 
@@ -427,14 +427,14 @@ export class WalletService {
       await this.notificationsService.createNotification(
         fromUserId,
         'Transfer Sent',
-        `You have transferred ${amt.toFixed()} units to ${recipient.memberId}.`,
+        `You have transferred $${amt.toFixed()}   to ${recipient.memberId}.`,
         '/wallet/transactions',
       );
 
       await this.notificationsService.createNotification(
         recipient.id,
         'Transfer Received',
-        `You have received ${amt.toFixed()} units from ${sender.memberId}.`,
+        `You have received $${amt.toFixed()}   from ${sender.memberId}.`,
         '/wallet/transactions',
       );
 
@@ -590,7 +590,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         userId,
         'Withdrawal Requested',
-        `Your withdrawal request of ${amt.toFixed()} units via ${method} has been created and is pending approval. We will notify you once it is processed.`,
+        `Your withdrawal request of $${amt.toFixed()}   via ${method} has been created and is pending approval. We will notify you once it is processed.`,
         '/wallet/withdrawal-requests',
       );
 
@@ -804,7 +804,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         dr.userId,
         'Deposit Approved',
-        `Your deposit request of ${amt.toFixed()} units has been approved and credited to your wallet.`,
+        `Your deposit request of $${amt.toFixed()}   has been approved and credited to your wallet.`,
         '/wallet/deposit-history',
       );
 
@@ -830,7 +830,7 @@ export class WalletService {
         await this.notificationsService.createNotification(
           dr.userId,
           'Deposit Rejected',
-          `Your deposit request of ${dr.amount} units has been rejected. Please contact support for more information.`,
+          `Your deposit request of ${dr.amount}   has been rejected. Please contact support for more information.`,
           '/wallet/deposit-history',
         );
 
@@ -907,7 +907,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         wr.userId,
         'Withdrawal Approved',
-        `Your withdrawal request of ${amt.toFixed()} units has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
+        `Your withdrawal request of $${amt.toFixed()}   has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
         '/wallet/withdrawal-requests',
       );
 
@@ -939,7 +939,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         wr.userId,
         'Withdrawal Rejected',
-        `Your withdrawal request of ${wr.amount} units has been rejected. The reason is: ${adminNote}. Please contact support for more information.`,
+        `Your withdrawal request of ${wr.amount}   has been rejected. The reason is: ${adminNote}. Please contact support for more information.`,
         '/wallet/withdrawal-requests',
       );
       return { ok: true };
@@ -963,7 +963,7 @@ export class WalletService {
     await this.notificationsService.createNotification(
       params.userId,
       'Bonus Credit',
-      `Your account has been credited with a bonus of ${params.amount} units. Reason: ${params.reason ?? 'Admin credit'}.`,
+      `Your account has been credited with a bonus of ${params.amount}  . Reason: ${params.reason ?? 'Admin credit'}.`,
       '/wallet/transactions',
     );
 

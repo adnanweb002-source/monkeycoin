@@ -52,8 +52,8 @@ export class PackagesCronService {
 
     // Skip Sat/Sun
     const day = today.getDay();
-    if (day === 0 || day === 6) {
-      this.log.debug('Weekend — skipping package earnings run');
+    if (day === 0) {
+      this.log.debug('Sunday — skipping package earnings run');
       return;
     }
 

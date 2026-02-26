@@ -238,13 +238,49 @@ export class PackagesService {
 
       await this.addBinaryVolume(tx, user.id, bv);
 
+
       // next-day start + duration
       const startDate = new Date();
       startDate.setDate(startDate.getDate() + 1);
+
+      // If start Date is a sunday, shift to the following Monday
+      if (startDate.getDay() === 0) {
+        startDate.setDate(startDate.getDate() + 1);
+      }
+
+      // if start Date is a holiday, shift to the next day until it's not a holiday
+      const holiday = await this.prisma.holiday.findFirst({
+      where: { date: startDate },
+      });
+
+      while (holiday) {
+        startDate.setDate(startDate.getDate() + 1);
+        const nextHoliday = await this.prisma.holiday.findFirst({
+          where: { date: startDate },
+        });
+        if (!nextHoliday) break;
+      }
+
       startDate.setHours(0, 0, 0, 0);
 
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + pkg.durationDays);
+      
+      // If end Date falls on a Sunday, shift by one day to Saturday
+      if (endDate.getDay() === 0) {
+        endDate.setDate(endDate.getDate() + 1);
+      }
+
+      // if end Date falls on a holiday, shift to the next day until it's not a holiday
+      let endHoliday = await this.prisma.holiday.findFirst({
+        where: { date: endDate },
+      });
+      while (endHoliday) {
+        endDate.setDate(endDate.getDate() + 1);
+        endHoliday = await this.prisma.holiday.findFirst({
+          where: { date: endDate },
+        });
+      }
 
       await tx.packagePurchase.create({
         data: {

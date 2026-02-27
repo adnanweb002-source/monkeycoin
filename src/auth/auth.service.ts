@@ -14,6 +14,7 @@ import { TwoFactorService } from './twofactor.service';
 import { WalletService } from 'src/wallets/wallet.service';
 import { WalletType, TransactionType, Position } from '@prisma/client';
 import { NotificationsService } from 'src/notifications/notifcations.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -66,6 +67,21 @@ export class AuthService {
     }
 
     throw new BadRequestException('No available slot in tree');
+  }
+
+  private async generateUniqueMemberId(): Promise<string> {
+    while (true) {
+      const memberId = `V${crypto.randomInt(10000000, 100000000)}`; // V + 8 digits
+
+      const existing = await this.prisma.user.findUnique({
+        where: { memberId },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return memberId;
+      }
+    }
   }
 
   async register(dto: RegisterDto, ip: string) {
@@ -142,7 +158,10 @@ export class AuthService {
       },
     });
 
-    console.log(`Checking slot for parentId ${parentId} and position ${finalPosition}:`, slotTaken);
+    console.log(
+      `Checking slot for parentId ${parentId} and position ${finalPosition}:`,
+      slotTaken,
+    );
 
     if (slotTaken) {
       throw new BadRequestException(
@@ -153,10 +172,12 @@ export class AuthService {
     // -----------------------------
     // 6. Transaction (User + Wallets + Audit)
     // -----------------------------
+    // Member ID has to be V and then 8 digits
+    const memberId = await this.generateUniqueMemberId();
     const result = await this.prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
-          memberId: `M${Date.now()}`,
+          memberId: memberId,
           firstName,
           lastName,
           phoneNumber: phone,
@@ -195,11 +216,11 @@ export class AuthService {
       return newUser;
     });
 
-     await this.notificationsService.createNotification(
-        result.id,
-        'Welcome to Monkey!',
-        `Your account has been successfully created. Your member ID is ${result.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
-      );
+    await this.notificationsService.createNotification(
+      result.id,
+      'Welcome to Monkey!',
+      `Your account has been successfully created. Your member ID is ${result.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
+    );
 
     // -----------------------------
     // 7. Return Response
@@ -221,7 +242,7 @@ export class AuthService {
   async login(dto: LoginDto, ip: string) {
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email: dto.phoneOrEmail }, { phoneNumber: dto.phoneOrEmail }],
+        OR: [{ email: dto.phoneOrEmail }, { phoneNumber: dto.phoneOrEmail }, { memberId: dto.phoneOrEmail }],
       },
       include: { twoFactorSecret: true }, // corrected
     });
@@ -443,7 +464,6 @@ export class AuthService {
       'Email Changed',
       `Your account email was recently changed from ${before.email} to ${dto.newEmail}. If you did not perform this action, please contact our support immediately.`,
       '/profile?tab=settings',
-
     );
 
     return { ok: true };
@@ -475,12 +495,12 @@ export class AuthService {
       },
     });
 
-      await this.notificationsService.createNotification(
-        userId,
-        'Avatar Changed',
-        `Your account avatar was recently changed. If you did not perform this action, please contact our support immediately.`,
-        '/profile?tab=avatar',
-      );
+    await this.notificationsService.createNotification(
+      userId,
+      'Avatar Changed',
+      `Your account avatar was recently changed. If you did not perform this action, please contact our support immediately.`,
+      '/profile?tab=avatar',
+    );
 
     return { ok: true };
   }

@@ -341,11 +341,13 @@ export class WalletController {
   @Get('income/gain-report')
   async gainReport(
     @Req() req,
+    @Query('type') type: TransactionType,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
     return this.svc.getGainReport(
       req.user.id,
+      type,
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
     );

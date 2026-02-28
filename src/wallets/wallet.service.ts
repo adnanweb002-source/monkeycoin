@@ -1134,12 +1134,12 @@ export class WalletService {
     );
   }
 
-  async getGainReport(userId: number, from?: Date, to?: Date) {
+  async getGainReport(userId: number, type: TransactionType,from?: Date, to?: Date) {
     const where: any = {
       userId,
       direction: 'CREDIT',
       type: {
-        not: TransactionType.DEPOSIT,
+        in: [type],
       },
     };
 

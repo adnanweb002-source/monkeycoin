@@ -35,13 +35,35 @@ export class AuthService {
     return argon2.verify(hash, password);
   }
 
-  private async findAvailablePlacement(startParentId: number) {
+  private async findAvailablePlacement(
+    startParentId: number,
+    preferredPosition?: Position,
+  ) {
     let queue = [startParentId];
 
     while (queue.length) {
-      const pid = queue.shift();
+      const pid = queue.shift()!;
 
-      // Check LEFT slot
+      // If a preferred position is provided
+      if (preferredPosition) {
+        const existing = await this.prisma.user.findFirst({
+          where: { parentId: pid, position: preferredPosition },
+          select: { id: true },
+        });
+
+        // If slot is empty → return immediately
+        if (!existing) {
+          return { parentId: pid, position: preferredPosition };
+        }
+
+        // If filled → go deeper ONLY on that side
+        queue.push(existing.id);
+        continue;
+      }
+
+      // Default behavior (normal BFS both sides)
+
+      // Check LEFT
       const left = await this.prisma.user.findFirst({
         where: { parentId: pid, position: Position.LEFT },
         select: { id: true },
@@ -51,7 +73,7 @@ export class AuthService {
         return { parentId: pid, position: Position.LEFT };
       }
 
-      // Check RIGHT slot
+      // Check RIGHT
       const right = await this.prisma.user.findFirst({
         where: { parentId: pid, position: Position.RIGHT },
         select: { id: true },
@@ -142,7 +164,7 @@ export class AuthService {
 
       parentId = parent.id;
     } else {
-      const parent = await this.findAvailablePlacement(1);
+      const parent = await this.findAvailablePlacement(sponsorId, position);
 
       parentId = parent.parentId;
       finalPosition = parent.position;
@@ -242,7 +264,11 @@ export class AuthService {
   async login(dto: LoginDto, ip: string) {
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email: dto.phoneOrEmail }, { phoneNumber: dto.phoneOrEmail }, { memberId: dto.phoneOrEmail }],
+        OR: [
+          { email: dto.phoneOrEmail },
+          { phoneNumber: dto.phoneOrEmail },
+          { memberId: dto.phoneOrEmail },
+        ],
       },
       include: { twoFactorSecret: true }, // corrected
     });

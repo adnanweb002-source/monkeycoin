@@ -204,6 +204,8 @@ export class TreeService {
         position: true,
         status: true,
         avatarId: true,
+        country: true,
+        activePackageCount: true,
       },
     });
   }

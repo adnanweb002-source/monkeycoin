@@ -32,8 +32,56 @@ export class AuthController {
   ) {}
 
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Ip() ip: string) {
-    return this.authService.register(dto, ip);
+  async register(
+    @Body() dto: RegisterDto,
+    @Ip() ip: string,
+    @Res({ passthrough: true }) res,
+  ) {
+    const {
+      id,
+      memberId,
+      email,
+      phone,
+      firstName,
+      lastName,
+      country,
+      sponsorId,
+      parentId,
+      position,
+      accessToken,
+      refreshToken,
+    } = await this.authService.register(dto, ip);
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      path: '/',
+    };
+
+    res.cookie('access_token', accessToken, {
+      ...cookieOptions,
+      maxAge: 55 * 60 * 1000,
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return {
+      id,
+      memberId,
+      email,
+      phone,
+      firstName,
+      lastName,
+      country,
+      sponsorId,
+      parentId,
+      position,
+    };
   }
 
   @Post('login')
@@ -54,7 +102,7 @@ export class AuthController {
 
     res.cookie('access_token', accessToken, {
       ...cookieOptions,
-      maxAge: 15 * 60 * 1000, // 15 min
+      maxAge: 55 * 60 * 1000, // 15 min
     });
 
     res.cookie('refresh_token', refreshToken, {
@@ -71,6 +119,7 @@ export class AuthController {
   @HttpCode(200)
   async refresh(@Req() req, @Res({ passthrough: true }) res) {
     const refreshToken = req.cookies?.refresh_token;
+
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token missing');
     }
@@ -84,7 +133,7 @@ export class AuthController {
       sameSite: 'none',
       domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
       path: '/',
-      maxAge: 15 * 60 * 1000,
+      maxAge: 55 * 60 * 1000,
     });
 
     res.cookie('refresh_token', tokens.refreshToken, {

@@ -244,6 +244,9 @@ export class AuthService {
       `Your account has been successfully created. Your member ID is ${result.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
     );
 
+    // Get the tokens for the new user
+    const tokens = await this.issueTokens(result.id);
+
     // -----------------------------
     // 7. Return Response
     // -----------------------------
@@ -258,6 +261,8 @@ export class AuthService {
       sponsorId,
       parentId,
       position: finalPosition,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
     };
   }
 

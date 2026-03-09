@@ -56,7 +56,7 @@ body{
 <div class="container">
 
 <div class="header">
-<img src="https://gogex.xyz/src/assets/mail-banner.png"/>
+<img src="https://gogex.xyz/src/assets/mail-banner.png" width="auto" height="auto"/>
 </div>
 
 <div class="content">

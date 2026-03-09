@@ -35,10 +35,10 @@ body{
 .header{
   background:#2f3b52;
   text-align:center;
-  padding:30px;
+  padding:15px;
 }
 .content{
-  padding:35px;
+  padding:25px;
   color:#333;
 }
 .footer{
@@ -56,7 +56,7 @@ body{
 <div class="container">
 
 <div class="header">
-<img src="https://gogex.xyz/src/assets/mail-banner.png" style="width:100%; max-height:120px; object-fit:cover; display:block;"/>
+<img src="https://gogex.xyz/src/assets/mail-banner.png" style="width:100%; max-height:260px; object-fit:cover; display:block;"/>
 </div>
 
 <div class="content">

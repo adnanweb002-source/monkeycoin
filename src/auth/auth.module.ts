@@ -7,17 +7,18 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { LocalStrategy } from './local.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MailService } from '../mail/mail.service';   
 import { TwoFactorService } from './twofactor.service';
 import { WalletModule } from '../wallets/wallet.module';
 import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
+import { MailModule } from 'src/mail/mail.module';
 
 @Global()
 @Module({
   imports: [
     PassportModule,
     WalletModule,
+    MailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -34,7 +35,6 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
     AuthService,
     JwtStrategy,
     LocalStrategy,
-    MailService,
     TwoFactorService,
     ConfigService,
     NowPaymentsService,

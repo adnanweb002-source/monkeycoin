@@ -5,17 +5,17 @@ import { NotificationsGateway } from './notifications.gateway';
 import { PrismaService } from '../prisma.service';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import {MailService} from 'src/mail/mail.service';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), MailModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
     NotificationsGateway,
     PrismaService,
     ConfigService,
-    MailService,
+
   ],
   exports: [NotificationsService],
 })

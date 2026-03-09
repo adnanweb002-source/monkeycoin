@@ -11,9 +11,10 @@ import { ConfigService } from '@nestjs/config';
 import { TwoFactorService } from 'src/auth/twofactor.service';
 import { MailService } from 'src/mail/mail.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, MailModule],
   controllers: [AdminUsersController, AdminController],
   providers: [
     AdminUsersService,
@@ -25,7 +26,6 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
     JwtService,
     ConfigService,
     TwoFactorService,
-    MailService,
   ],
   exports: [AdminUsersService],
 })

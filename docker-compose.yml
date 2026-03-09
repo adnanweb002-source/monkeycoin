@@ -11,6 +11,28 @@ services:
       - postgres
       - redis
 
+  worker:
+    build: .
+    container_name: nest_worker
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    command: node dist/mail/mail.worker.js
+
+  bull-dashboard:
+    build: .
+    container_name: bull_dashboard
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    ports:
+      - "3001:3001"
+    command: node dist/dashboard/bull-board.js
+
   postgres:
     image: postgres:15
     container_name: nest_postgres

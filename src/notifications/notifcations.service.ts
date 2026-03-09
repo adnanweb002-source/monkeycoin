@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { Logger } from '@nestjs/common';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class NotificationsService {
@@ -9,6 +10,7 @@ export class NotificationsService {
   constructor(
     private prisma: PrismaService,
     private gateway: NotificationsGateway,
+    private mailService: MailService,
   ) {}
 
   // 🔹 CREATE (internal use)
@@ -16,30 +18,43 @@ export class NotificationsService {
     userId: number,
     title: string,
     description: string,
-    redirectionRoute?: string,
+    sendMail?: boolean,
+    emailHtml?: string,
+    emailSubject?: string,
+    redirectUrl?: string,
   ) {
+    /* Save notification */
+
     const notification = await this.prisma.notification.create({
       data: {
         userId,
         title,
         description,
-        redirectionRoute,
+        redirectionRoute: redirectUrl,
       },
     });
-    this.logger.log(`Created notification for user ${userId}: ${title}`);
+
+    /* Websocket */
 
     this.gateway.emitToUser(userId, notification);
 
+    /* Email */
+
+    if (sendMail && emailHtml && emailSubject) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (user?.email) {
+        await this.mailService.sendMail(user.email, emailSubject, emailHtml);
+      }
+    }
 
     return notification;
   }
 
   // 🔹 PAGINATED FETCH
-  async getUserNotifications(
-    userId: number,
-    take = 10,
-    skip = 0,
-  ) {
+  async getUserNotifications(userId: number, take = 10, skip = 0) {
     const [data, total, unreadCount] = await Promise.all([
       this.prisma.notification.findMany({
         where: { userId },

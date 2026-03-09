@@ -3,7 +3,6 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { generateTxNumber } from './utils';
@@ -16,6 +15,7 @@ import { Role } from '@prisma/client';
 import { NowPaymentsService } from './deposit-gateway.service';
 import { CreateCryptoDepositDto } from './dto/deposit.dto';
 import { NotificationsService } from 'src/notifications/notifcations.service';
+import { EmailTemplates } from 'src/mail/templates/email.templates';
 @Injectable()
 export class WalletService {
   constructor(
@@ -238,6 +238,9 @@ export class WalletService {
         userId,
         'Wallet Credited',
         `Your ${walletType} wallet has been credited with $${amt.toFixed()}.`,
+        false,
+        undefined,
+        undefined,
         '/wallet/transactions',
       );
 
@@ -314,7 +317,10 @@ export class WalletService {
       await this.notificationsService.createNotification(
         userId,
         'Wallet Debited',
-        `Your ${walletType} wallet has been debited by $${amt.toFixed()}  .`,
+        `Your ${walletType} wallet has been debited by $${amt.toFixed()}.`,
+        false,
+        undefined,
+        undefined,
         '/wallet/transactions',
       );
 
@@ -376,6 +382,7 @@ export class WalletService {
         throw new BadRequestException('Insufficient balance');
 
       const newFromBalance = fromBalance.minus(amt);
+
       await tx.wallet.update({
         where: { id: fromWallet.id },
         data: { balance: newFromBalance.toFixed() },
@@ -404,11 +411,14 @@ export class WalletService {
       if (!toWallet) throw new NotFoundException('Recipient wallet not found');
 
       const toBalance = new Decimal(toWallet.balance.toString());
+
       const newToBalance = toBalance.plus(amt);
+
       await tx.wallet.update({
         where: { id: toWallet.id },
         data: { balance: newToBalance.toFixed() },
       });
+
       const txNoIn = generateTxNumber();
       await tx.walletTransaction.create({
         data: {
@@ -424,17 +434,40 @@ export class WalletService {
         },
       });
 
+      const html = EmailTemplates.fundTransfer(
+        sender.firstName + ' ' + sender.lastName,
+        recipient.firstName + ' ' + recipient.lastName,
+        amt.toFixed(),
+        fromWalletType,
+        txNoOut,
+        newFromBalance.toFixed(),
+      );
+
       await this.notificationsService.createNotification(
         fromUserId,
         'Transfer Sent',
         `You have transferred $${amt.toFixed()}   to ${recipient.memberId}.`,
+        true,
+        html,
+        'Funds sent successfully',
         '/wallet/transactions',
+      );
+
+      const htmlRecipient = EmailTemplates.fundReceived(
+        recipient.firstName + ' ' + recipient.lastName,
+        sender.firstName + ' ' + sender.lastName,
+        amt.toFixed(),
+        toWallet.type,
+        newToBalance.toFixed(),
       );
 
       await this.notificationsService.createNotification(
         recipient.id,
         'Transfer Received',
         `You have received $${amt.toFixed()}   from ${sender.memberId}.`,
+        true,
+        htmlRecipient,
+        'Funds received',
         '/wallet/transactions',
       );
 
@@ -546,7 +579,7 @@ export class WalletService {
     walletType: 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET' | 'F_WALLET';
     amount: string;
     method: string; // e.g., 'USDT_TRX'
-    address?: string;
+    address: string;
   }) {
     const { userId, walletType, amount, method, address } = params;
 
@@ -587,10 +620,20 @@ export class WalletService {
         },
       });
 
+      const html = EmailTemplates.withdrawalRequest(
+        user.firstName + ' ' + user.lastName,
+        amt.toFixed(),
+        walletType,
+        address,
+      );
+
       await this.notificationsService.createNotification(
         userId,
         'Withdrawal Requested',
         `Your withdrawal request of $${amt.toFixed()}   via ${method} has been created and is pending approval. We will notify you once it is processed.`,
+        true,
+        html,
+        'Withdrawal Request Initiated',
         '/wallet/withdrawal-requests',
       );
 
@@ -610,14 +653,10 @@ export class WalletService {
   }) {
     const { userId, amount, externalTxId, meta } = params;
 
-    await this.notificationsService.createNotification(
-      userId,
-      'Deposit Confirmed',
-      `Your deposit of ${amount} has been confirmed and credited to your F-Wallet. Thank you for your patience!`,
-      '/wallet/deposit-history',
-    );
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
 
-    return this.creditWallet({
+    const response =  await this.creditWallet({
       userId,
       walletType: 'F_WALLET',
       amount,
@@ -625,6 +664,26 @@ export class WalletService {
       purpose: 'Crypto deposit confirmed',
       meta: { externalTxId, ...meta },
     });
+
+     const html = EmailTemplates.deposit(
+      user.firstName + ' ' + user.lastName,
+      amount,
+      'USD',
+      externalTxId || "",
+      response.balanceAfter
+      
+    )
+
+    await this.notificationsService.createNotification(
+      userId,
+      'Deposit Confirmed',
+      `Your deposit of ${amount} has been confirmed and credited to your F-Wallet. Thank you for your patience!`,
+      true,
+      html,
+      'Deposit Successful - Funds Added',
+      '/wallet/deposit-history',
+    );
+      return response;
   }
 
   // helper: check if candidateId is in the downline of userId
@@ -805,6 +864,9 @@ export class WalletService {
         dr.userId,
         'Deposit Approved',
         `Your deposit request of $${amt.toFixed()}   has been approved and credited to your wallet.`,
+        false,
+        undefined,
+        undefined,
         '/wallet/deposit-history',
       );
 
@@ -826,13 +888,15 @@ export class WalletService {
         data: { status: 'REJECTED', approvedAt: new Date() },
       });
 
-
-        await this.notificationsService.createNotification(
-          dr.userId,
-          'Deposit Rejected',
-          `Your deposit request of ${dr.amount}   has been rejected. Please contact support for more information.`,
-          '/wallet/deposit-history',
-        );
+      await this.notificationsService.createNotification(
+        dr.userId,
+        'Deposit Rejected',
+        `Your deposit request of ${dr.amount}   has been rejected. Please contact support for more information.`,
+        false,
+        undefined,
+        undefined,
+        '/wallet/deposit-history',
+      );
 
       return { ok: true };
     });
@@ -904,10 +968,20 @@ export class WalletService {
           adminNote: adminNote,
         },
       });
+
+      const html = EmailTemplates.withdrawalProcessed(
+        user.firstName + ' ' + user.lastName,
+        amt.toFixed(),
+        wallet.type,
+      );
+
       await this.notificationsService.createNotification(
         wr.userId,
         'Withdrawal Approved',
         `Your withdrawal request of $${amt.toFixed()}   has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
+        true,
+        html,
+        'Withdrawal Approved',
         '/wallet/withdrawal-requests',
       );
 
@@ -923,6 +997,7 @@ export class WalletService {
     return this.prisma.$transaction(async (tx) => {
       const wr = await tx.withdrawalRequest.findUnique({
         where: { id: withdrawalRequestId },
+        include: { wallet: true, user: true },
       });
       if (!wr) throw new NotFoundException('Withdrawal request not found');
       if (wr.status !== 'PENDING') {
@@ -936,10 +1011,20 @@ export class WalletService {
           adminNote: adminNote,
         },
       });
+
+      const html = EmailTemplates.withdrawalCancelled(
+        wr.user.firstName + ' ' + wr.user.lastName,
+        wr.amount.toFixed(),
+        adminNote,
+        wr.wallet.balance.toString(),
+      );
       await this.notificationsService.createNotification(
         wr.userId,
         'Withdrawal Rejected',
-        `Your withdrawal request of ${wr.amount}   has been rejected. The reason is: ${adminNote}. Please contact support for more information.`,
+        `Your withdrawal request of ${wr.amount.toFixed()}   has been rejected. The reason is: ${adminNote}. Please contact support for more information.`,
+        true,
+        html,
+        'Withdrawal Request Cancelled',
         '/wallet/withdrawal-requests',
       );
       return { ok: true };
@@ -964,6 +1049,9 @@ export class WalletService {
       params.userId,
       'Bonus Credit',
       `Your account has been credited with a bonus of ${params.amount}  . Reason: ${params.reason ?? 'Admin credit'}.`,
+      false,
+      undefined,
+      undefined,
       '/wallet/transactions',
     );
 
@@ -1134,7 +1222,12 @@ export class WalletService {
     );
   }
 
-  async getGainReport(userId: number, type: TransactionType,from?: Date, to?: Date) {
+  async getGainReport(
+    userId: number,
+    type: TransactionType,
+    from?: Date,
+    to?: Date,
+  ) {
     const where: any = {
       userId,
       direction: 'CREDIT',
@@ -1252,6 +1345,9 @@ export class WalletService {
       userId,
       'Wallet Added',
       `You have added a new wallet (${sw.name}) to your account. You can manage your wallets in the profile section.`,
+      false,
+      undefined,
+      undefined,
       '/profile?tab=wallets',
     );
 
@@ -1269,7 +1365,7 @@ export class WalletService {
   ) {
     const wallet = await this.prisma.userWallet.findUnique({
       where: { id: dto.walletId },
-      include: { supportedWallet: true },
+      include: { supportedWallet: true, user: true },
     });
 
     if (!wallet || wallet.userId !== userId)
@@ -1278,10 +1374,18 @@ export class WalletService {
     if (wallet.changeCount >= wallet.supportedWallet.allowedChangeCount)
       throw new BadRequestException('Wallet change limit reached');
 
+    const html = EmailTemplates.withdrawalAddressChanged(
+      wallet.user.firstName + ' ' + wallet.user.lastName,
+      dto.address,
+    );
+
     await this.notificationsService.createNotification(
       userId,
       'Wallet Updated',
       `You have updated the address for your ${wallet.supportedWallet.name} wallet. If you did not make this change, please contact support immediately.`,
+      true,
+      html,
+      '⚠️ Withdrawal Address Changed',
       '/profile?tab=wallets',
     );
 
@@ -1306,9 +1410,12 @@ export class WalletService {
       userId,
       'Wallet Deleted',
       `You have deleted a wallet from your account. If you did not make this change, please contact support immediately.`,
+      false,
+      undefined,
+      undefined,
       '/profile?tab=wallets',
     );
-    
+
     return { ok: true };
   }
 }

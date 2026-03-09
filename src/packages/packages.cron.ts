@@ -44,7 +44,6 @@ export class PackagesCronService {
     job.start();
 
     this.log.log('Daily package returns cron registered at ' + cronExpr);
-
   }
 
   async runDailyReturns() {
@@ -120,6 +119,9 @@ export class PackagesCronService {
             p.userId,
             'Daily Package Return',
             `Your package ${p.package.name} has generated a daily return of $${amount.toFixed()}. This amount has been credited to your M-Wallet. Keep up the good work!`,
+            false,
+            undefined,
+            undefined,
             '/income/direct',
           );
 

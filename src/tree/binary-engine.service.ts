@@ -8,6 +8,7 @@ import { CronJob } from 'cron';
 import { Logger } from '@nestjs/common/services/logger.service';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import {SETTING_TYPE} from '@prisma/client';
+import { EmailTemplates } from 'src/mail/templates/email.templates';
 
 @Injectable()
 export class BinaryEngineService {
@@ -83,6 +84,8 @@ export class BinaryEngineService {
         id: true,
         leftBv: true,
         rightBv: true,
+        firstName: true,
+        lastName: true,
       },
     });
 
@@ -144,7 +147,7 @@ export class BinaryEngineService {
 
   /** -------- Core binary processing per user -------- */
   private async processUserBinary(
-    user: { id: number; leftBv: any; rightBv: any },
+    user: { id: number; leftBv: any; rightBv: any; firstName: string; lastName: string },
     rate: Decimal,
     creditDate: Date,
   ) {
@@ -187,10 +190,21 @@ export class BinaryEngineService {
         },
       });
 
+      const html = EmailTemplates.binaryIncome(
+        user.firstName + ' ' + user.lastName,
+        payout.toFixed(),
+        left.toFixed(),
+        right.toFixed(),
+        Decimal.max(left.minus(weak), right.minus(weak)).toFixed(),
+
+      )
       await this.notificationsService.createNotification(
         user.id,
         'Binary Income Credited',
         `Your binary income of $${payout.toFixed()} has been credited to your M-Wallet for ${creditDate.toDateString()}. Keep up the good work!`,
+        true,
+        html,
+        'Binary Earnings Notification',
         '/income/binary',
       );
 

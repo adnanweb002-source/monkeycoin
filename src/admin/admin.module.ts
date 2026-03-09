@@ -9,7 +9,7 @@ import { AuthService } from 'src/auth/auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { TwoFactorService } from 'src/auth/twofactor.service';
-import { MailService } from 'src/auth/mail.service';
+import { MailService } from 'src/mail/mail.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({

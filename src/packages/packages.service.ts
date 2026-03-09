@@ -15,6 +15,8 @@ import { TransactionType, WalletType } from '@prisma/client';
 import { TreeService } from 'src/tree/tree.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { Logger } from '@nestjs/common';
+import { EmailTemplates } from 'src/mail/templates/email.templates';
+import { response } from 'express';
 @Injectable()
 export class PackagesService {
   private readonly log = new Logger(PackagesService.name);
@@ -114,6 +116,9 @@ export class PackagesService {
         sponsor.id,
         'Binary Volume Update',
         `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume has increased by ${bv.toFixed()} BV due to a package purchase in your downline. Keep building your network!`,
+        false,
+        undefined,
+        undefined,
         '/reports/track-referral',
       );
 
@@ -176,16 +181,24 @@ export class PackagesService {
       this.log.log('Find user by member ID');
       user = await this.prisma.user.findUnique({
         where: { memberId: targetUserId },
+        include: { sponsor: true },
       });
     } else {
       this.log.log('Find user by user id');
       user = await this.prisma.user.findUnique({
         where: { id: buyerId },
+        include: { sponsor: true },
       });
     }
 
     if (!user) {
       throw new BadRequestException('Target user not found');
+    }
+
+    const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
+
+    if (!buyer) {
+      throw new Error('Buyer not found');
     }
 
     // If the buyer is not an admin, the userId must be either the buyer themselves or someone in the downline
@@ -238,7 +251,6 @@ export class PackagesService {
 
       await this.addBinaryVolume(tx, user.id, bv);
 
-
       // next-day start + duration
       const startDate = new Date();
       startDate.setDate(startDate.getDate() + 1);
@@ -250,7 +262,7 @@ export class PackagesService {
 
       // if start Date is a holiday, shift to the next day until it's not a holiday
       const holiday = await this.prisma.holiday.findFirst({
-      where: { date: startDate },
+        where: { date: startDate },
       });
 
       while (holiday) {
@@ -265,7 +277,7 @@ export class PackagesService {
 
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + pkg.durationDays);
-      
+
       // If end Date falls on a Sunday, shift by one day to Saturday
       if (endDate.getDay() === 0) {
         endDate.setDate(endDate.getDate() + 1);
@@ -305,6 +317,14 @@ export class PackagesService {
       // ➜ REFERRAL BONUS and PACKAGE COUNT INCREMENT
       if (buyerId == user.id) {
         if (user?.sponsorId) {
+          const sponsor = await this.prisma.user.findUnique({
+            where: { id: user.sponsorId },
+          });
+
+          if (!sponsor) {
+            throw new NotFoundException('Sponsor not found');
+          }
+
           const bonus = await this.prisma.adminSetting.findUnique({
             where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
           });
@@ -313,8 +333,10 @@ export class PackagesService {
 
           const bonusAmt = amt.mul(bonusRate);
 
+          let response: any = null;
+
           if (bonusAmt.gt(0)) {
-            await this.walletService.creditWallet({
+            response = await this.walletService.creditWallet({
               userId: user.sponsorId,
               walletType: WalletType.I_WALLET,
               amount: bonusAmt.toString(),
@@ -323,15 +345,83 @@ export class PackagesService {
               meta: { fromUserId: user.id, fromMemberId: user.memberId },
             });
           }
+
+          const html = EmailTemplates.referralIncome(
+            sponsor.firstName + ' ' + sponsor.lastName,
+            bonusAmt.toFixed(),
+            user.firstName + ' ' + user.lastName,
+            response?.balanceAfter,
+          );
+
+          await this.notificationsService.createNotification(
+            user.sponsorId,
+            'Referral Bonus Earned',
+            `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
+            true,
+            html,
+            'New Referral Earnings Credited!',
+            '/income/referral',
+          );
         }
       }
 
-      await this.notificationsService.createNotification(
-        user.id,
-        'Package Purchased',
-        `You have successfully purchased the ${pkg.name} package. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
-        '/profile?tab=packages',
-      );
+      if (buyerId !== user.id) {
+        // send notification to buyer
+        const html = EmailTemplates.packagePurchasedForOther(
+          buyer.firstName + ' ' + buyer.lastName,
+          user.firstName + ' ' + user.lastName,
+          pkg.name,
+          amt.toFixed(),
+          'transaction Id',
+          parts.map((p) => `${p.wallet}: $${p.amount}`).join(', '),
+        );
+        await this.notificationsService.createNotification(
+          buyerId,
+          `Package Purchased for ${user.firstName} ${user.lastName}`,
+          `You have successfully purchased the ${pkg.name} package for ${user.firstName} ${user.lastName}. The package will be active from ${startDate.toDateString()} to ${endDate.toDateString()}.`,
+          true,
+          html,
+          `You purchased ${pkg.name} for ${user.firstName} ${user.lastName}`,
+          '/profile?tab=packages',
+        );
+
+        // send notification to recipient
+        const html2 = EmailTemplates.packageAssigned(
+          user.firstName + ' ' + user.lastName,
+          pkg.name,
+          buyer.firstName + ' ' + buyer.lastName,
+          amt.toFixed(),
+        );
+        await this.notificationsService.createNotification(
+          user.id,
+          'Package Purchased for You',
+          `The ${pkg.name} package has been purchased for you by ${buyer.firstName} ${buyer.lastName}. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
+          true,
+          html2,
+          `New Package Added to Your Account`,
+          '/profile?tab=packages',
+        );
+      } else {
+        const html = EmailTemplates.packageSelf(
+          user.firstName + ' ' + user.lastName,
+          pkg.name,
+          amt.toFixed(),
+          'Transaction Id',
+          parts.map((p) => `${p.wallet}: $${p.amount}`).join(', '),
+          startDate.toDateString(),
+          '/profile?tab=packages',
+        );
+
+        await this.notificationsService.createNotification(
+          user.id,
+          'Package Purchased',
+          `You have successfully purchased the ${pkg.name} package. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
+          true,
+          html,
+          `${pkg.name} purchased successfully`,
+          '/profile?tab=packages',
+        );
+      }
     });
   }
 

@@ -23,6 +23,10 @@ import { EmailChangeDto } from './dto/email-change.dto';
 import { TwoFactorService } from './twofactor.service';
 import { AvatarChangeDto } from './dto/avatar-change.dto';
 import { Request as Rqst, Response } from 'express';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { Role } from './enums/role.enum';
 
 @Controller('auth')
 export class AuthController {
@@ -221,13 +225,14 @@ export class AuthController {
   }
 
   // Request reset link (email)
-  @Post('2fa/reset/request')
-  async request2faReset(@Body('email') email: string) {
-    return this.twoFactorService.requestReset(email);
-  }
+  // @Post('2fa/reset/request')
+  // async request2faReset(@Body('email') email: string) {
+  //   return this.twoFactorService.requestReset(email);
+  // }
 
   // Admin backdoor: reset 2fa for user (requires admin role) — this is a sample, hook into RBAC
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post('admin/users/:id/2fa-reset')
   async adminReset2fa(
     @Request() req,
@@ -249,5 +254,35 @@ export class AuthController {
   @Get('/get-profile')
   async getUserProfile(@Request() req) {
     return this.authService.getProfile(req.user.id);
+  }
+
+  @Post('/forgot-password')
+  async forgotPassword(@Body('email') email: string, @Ip() ip: string) {
+    return this.authService.requestPasswordReset(email, ip);
+  }
+
+  @Post('/reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto, @Request() req, @Ip() ip: string) {
+    return this.authService.resetPassword(
+      dto.email,
+      dto.token,
+      dto.newPassword,
+      ip,
+    );
+  }
+
+  @Post('/request-2fa-reset')
+  async requestTwoFactorReset(@Body('email') email: string, @Request() req, @Ip() ip: string) {
+    return this.twoFactorService.requestReset(email, ip);
+  }
+
+  @Post('/reset-2fa')
+  async resetTwoFactor(
+    @Body('email') email: string,
+    @Body('token') token: string,
+    @Ip() ip: string,
+    @Request() req,
+  ) {
+    return this.twoFactorService.resetTwoFactor(email, token, ip);
   }
 }

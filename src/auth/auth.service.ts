@@ -15,6 +15,7 @@ import { WalletService } from 'src/wallets/wallet.service';
 import { WalletType, TransactionType, Position } from '@prisma/client';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import * as crypto from 'crypto';
+import { EmailTemplates } from 'src/mail/templates/email.templates';
 
 @Injectable()
 export class AuthService {
@@ -238,10 +239,21 @@ export class AuthService {
       return newUser;
     });
 
+    const html = EmailTemplates.registration(
+      result.firstName + ' ' + result.lastName,
+      result.memberId,
+      dto.password,
+      `${process.env.FRONTEND_URL}/login`,
+    );
+
     await this.notificationsService.createNotification(
       result.id,
       'Welcome to Monkey!',
       `Your account has been successfully created. Your member ID is ${result.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
+      true,
+      html,
+      'Welcome Aboard! Your Vaultire Infinite Account is Ready!',
+      '/profile',
     );
 
     // Get the tokens for the new user
@@ -398,6 +410,151 @@ export class AuthService {
     return { ok: true };
   }
 
+  async requestPasswordReset(email: string, ip: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    // Do not reveal if email exists
+    if (!user) {
+      return { ok: true };
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = await argon2.hash(rawToken);
+
+    const expiry = new Date();
+    expiry.setMinutes(expiry.getMinutes() + 30); // 30 min expiry
+
+    await this.prisma.passwordResetToken.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        expiresAt: expiry,
+      },
+    });
+
+    const frontendUrl = this.cfg.get<string>('FRONTEND_URL');
+
+    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+
+    const html = EmailTemplates.forgotPassword(
+      user.firstName + ' ' + user.lastName,
+      resetLink,
+    );
+
+    // send email
+    await this.notificationsService.createNotification(
+      user.id,
+      'Reset Your Password',
+      `Click the link below to reset your password:\n\n${resetLink}\n\nThis link expires in 30 minutes.`,
+      true,
+      html,
+      'Reset Your Vaultire Infinite Password!',
+    );
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        actorType: 'user',
+        action: 'PASSWORD_RESET_REQUEST',
+        entity: 'User',
+        entityId: user.id,
+        ip,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  async resetPassword(
+    email: string,
+    token: string,
+    newPassword: string,
+    ip: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) throw new BadRequestException('Something went wrong'); // do not reveal email existence
+
+    const tokens = await this.prisma.passwordResetToken.findMany({
+      where: {
+        userId: user.id,
+        used: false,
+      },
+    });
+
+    let matchedToken: any = null;
+
+    for (const t of tokens) {
+      const valid = await argon2.verify(t.tokenHash, token);
+      if (valid) {
+        matchedToken = t;
+        break;
+      }
+    }
+
+    if (!matchedToken) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    if (matchedToken.expiresAt < new Date()) {
+      throw new BadRequestException('Reset token expired');
+    }
+
+    const newHash = await this.hashPassword(newPassword);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { passwordHash: newHash },
+      });
+
+      await tx.passwordResetToken.update({
+        where: { id: matchedToken.id },
+        data: { used: true },
+      });
+
+      // revoke refresh tokens
+      await tx.refreshToken.updateMany({
+        where: { userId: user.id, revoked: false },
+        data: { revoked: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: user.id,
+          actorType: 'user',
+          action: 'PASSWORD_RESET',
+          entity: 'User',
+          entityId: user.id,
+          ip,
+        },
+      });
+    });
+
+    const html = EmailTemplates.passwordChanged(
+      user.firstName + ' ' + user.lastName,
+      new Date().toLocaleString(),
+      ip,
+      'Location',
+    );
+
+    await this.notificationsService.createNotification(
+      user.id,
+      'Password Reset Successful',
+      'Your password has been successfully reset. If this was not you, contact support immediately.',
+      true,
+      html,
+      'Your Vaultire Infinite Password Was Successfully Updated!',
+      '/profile?tab=security',
+    );
+
+    return { ok: true };
+  }
+
   async changePassword(userId: number, dto: any, ip: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -440,10 +597,21 @@ export class AuthService {
       data: { revoked: true },
     });
 
+    const html = EmailTemplates.passwordChanged(
+      user.firstName + ' ' + user.lastName,
+      new Date().toLocaleString(),
+      ip,
+      'Location',
+    );
+
     await this.notificationsService.createNotification(
       userId,
       'Password Changed',
       'Your account password was recently changed. If you did not perform this action, please contact our support immediately.',
+      true,
+      html,
+      'Your Vaultire Infinite Password Was Successfully Updated!',
+      '/profile?tab=security',
     );
 
     return { ok: true };
@@ -490,11 +658,20 @@ export class AuthService {
       },
     });
 
+    const html = EmailTemplates.profileUpdated(
+      user.firstName + ' ' + user.lastName,
+      new Date().toLocaleString(),
+      ip,
+    );
+
     await this.notificationsService.createNotification(
       userId,
       'Email Changed',
       `Your account email was recently changed from ${before.email} to ${dto.newEmail}. If you did not perform this action, please contact our support immediately.`,
-      '/profile?tab=settings',
+      true,
+      html,
+      'Your Profile Has Been Updated',
+      '/profile',
     );
 
     return { ok: true };
@@ -526,11 +703,20 @@ export class AuthService {
       },
     });
 
+    const html = EmailTemplates.profileUpdated(
+      user.firstName + ' ' + user.lastName,
+      new Date().toLocaleString(),
+      ip,
+    );
+
     await this.notificationsService.createNotification(
       userId,
       'Avatar Changed',
       `Your account avatar was recently changed. If you did not perform this action, please contact our support immediately.`,
-      '/profile?tab=avatar',
+      true,
+      html,
+      'Your Profile Has Been Updated',
+      '/profile',
     );
 
     return { ok: true };

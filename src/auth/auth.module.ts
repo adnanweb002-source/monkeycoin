@@ -7,7 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { LocalStrategy } from './local.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MailService } from './mail.service';   
+import { MailService } from '../mail/mail.service';   
 import { TwoFactorService } from './twofactor.service';
 import { WalletModule } from '../wallets/wallet.module';
 import { NowPaymentsService } from 'src/wallets/deposit-gateway.service';

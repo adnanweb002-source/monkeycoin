@@ -106,6 +106,8 @@ model User {
   externalWallets   UserWallet[]
   binaryPaymentLogs  BinaryPayoutLog[]
   externalDeposits   ExternalDeposit[]
+  twoFactorResetTokens TwoFactorResetToken[]
+  passwordResetTokens PasswordResetToken[]
 
   queries Query[]
   queryReplies QueryReply[]
@@ -498,4 +500,32 @@ model Notification {
   isRead     Boolean    @default(false)
   redirectionRoute  String  @default("")
   user     User         @relation(fields: [userId], references: [id])
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String
+  userId    Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model TwoFactorResetToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String
+  userId    Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

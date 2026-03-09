@@ -221,6 +221,8 @@ export class TwoFactorService {
       true,
       html,
       'G2FA Reset Request Under Review',
+      "",
+      false
     );
 
     await this.prisma.auditLog.create({

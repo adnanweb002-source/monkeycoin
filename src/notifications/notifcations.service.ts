@@ -22,21 +22,26 @@ export class NotificationsService {
     emailHtml?: string,
     emailSubject?: string,
     redirectUrl?: string,
+    createPushNotification = true,
   ) {
     /* Save notification */
+    let notification: any;
+    
+    if (createPushNotification) {
+      // Create push notification logic here
+      notification = await this.prisma.notification.create({
+        data: {
+          userId,
+          title,
+          description,
+          redirectionRoute: redirectUrl,
+        },
+      });
 
-    const notification = await this.prisma.notification.create({
-      data: {
-        userId,
-        title,
-        description,
-        redirectionRoute: redirectUrl,
-      },
-    });
+      /* Websocket */
 
-    /* Websocket */
-
-    this.gateway.emitToUser(userId, notification);
+      this.gateway.emitToUser(userId, notification);
+    }
 
     /* Email */
 

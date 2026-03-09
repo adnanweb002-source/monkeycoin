@@ -451,6 +451,8 @@ export class AuthService {
       true,
       html,
       'Reset Your Vaultire Infinite Password!',
+      "",
+      false
     );
 
     await this.prisma.auditLog.create({

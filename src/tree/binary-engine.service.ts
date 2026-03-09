@@ -173,7 +173,7 @@ export class BinaryEngineService {
         walletType: WalletType.I_WALLET,
         amount: payout.toFixed(),
         txType: TransactionType.BINARY_INCOME,
-        purpose: 'Daily Binary Income',
+        purpose: 'Binary Income',
         meta: {
           weakVolume: weak.toFixed(),
           rate: rate.mul(100).toFixed(),

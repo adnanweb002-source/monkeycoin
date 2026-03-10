@@ -84,6 +84,11 @@ model User {
   g2faSecret     String
   isG2faEnabled  Boolean
 
+  currentRank        Int       @default(0)
+
+  rankLeftVolume     Decimal   @default(0) @db.Decimal(18,2)
+  rankRightVolume    Decimal   @default(0) @db.Decimal(18,2)
+
   // Self-relations (binary tree)
   sponsor        User?     @relation("UserSponsor", fields: [sponsorId], references: [id])
   sponsoredUsers User[]    @relation("UserSponsor")
@@ -113,6 +118,7 @@ model User {
   queryReplies QueryReply[]
 
   notifications Notification[]
+  rankClaims    RankRewardLog[]
   @@map("users")
 }
 
@@ -528,4 +534,38 @@ model TwoFactorResetToken {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+model Rank {
+  id            Int      @id @default(autoincrement())
+  name          String
+  requiredLeft  Decimal  @db.Decimal(18, 2)
+  requiredRight Decimal  @db.Decimal(18, 2)
+
+  rewardAmount  Decimal? @db.Decimal(18, 2)
+  rewardTitle   String?  // iPhone, MacBook etc
+
+  rewardWallet  WalletType?
+  order         Int      @unique
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  claims        RankRewardLog[]
+}
+
+model RankRewardLog {
+  id        Int      @id @default(autoincrement())
+
+  userId    Int
+  rankId    Int
+
+  reward    Decimal  @db.Decimal(18,2)
+
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  rank      Rank     @relation(fields: [rankId], references: [id])
+
+  @@unique([userId, rankId])
 }

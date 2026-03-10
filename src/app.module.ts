@@ -8,6 +8,8 @@ import { PackagesModule } from './packages/packages.module';
 import { AdminModule } from './admin/admin.module';
 import { UtilityModule } from './utility/utility.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { MetricsModule } from './metrics/metrics.module';
+import { RankModule } from './rankandrewards/ranks.module';
 @Module({
   imports: [
     AuthModule,
@@ -16,6 +18,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     PackagesModule,
     AdminModule,
     UtilityModule,
+    MetricsModule,
+    RankModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],

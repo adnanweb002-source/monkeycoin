@@ -105,10 +105,13 @@ export class PackagesService {
 
       const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
 
+      const rankField = current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
+
       await tx.user.update({
         where: { id: sponsor.id },
         data: {
           [field]: new Decimal(sponsor[field].toString()).plus(bv).toFixed(),
+          [rankField]: new Decimal(sponsor[rankField].toString()).plus(bv).toFixed(),
         },
       });
 

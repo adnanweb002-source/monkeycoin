@@ -8,6 +8,7 @@ import {
   Get,
   Body,
   Query,
+  Delete
 } from '@nestjs/common';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -18,6 +19,7 @@ import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
 import { PackagesCronService } from 'src/packages/packages.cron';
 import { WalletService } from 'src/wallets/wallet.service';
 import { SETTING_TYPE } from '@prisma/client';
+import { CreateRankDto } from './dto/create-rank.dto';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -136,5 +138,27 @@ export class AdminController {
   @Roles(Role.ADMIN)
   exportUserData() {
     return this.adminService.exportAllUserData();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('create-rank')
+  createRank(@Body() dto: CreateRankDto) {
+    return this.adminService.createRank(dto);
+  }
+
+
+  @Patch('/ranks/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  updateRank(@Param('id') id: number, @Body() dto: CreateRankDto) {
+    return this.adminService.updateRank(Number(id), dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete('/ranks/:id')
+  deleteRank(@Param('id') id: number) {
+    return this.adminService.deleteRank(Number(id));
   }
 }

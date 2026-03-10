@@ -8,6 +8,7 @@ import { Status, SETTING_TYPE } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
 import { AuthService } from 'src/auth/auth.service';
+import { CreateRankDto } from './dto/create-rank.dto';
 
 @Injectable()
 export class AdminUsersService {
@@ -385,4 +386,69 @@ export class AdminUsersService {
 
     return this.convertToCSV(rows);
   }
+
+  async createRank(dto: CreateRankDto) {
+    const exists = await this.prisma.rank.findUnique({
+      where: { order: dto.order },
+    });
+
+    if (exists) {
+      throw new BadRequestException(
+        `Rank with order ${dto.order} already exists`,
+      );
+    }
+
+    const rank = await this.prisma.rank.create({
+      data: {
+        name: dto.name,
+        requiredLeft: dto.requiredLeft,
+        requiredRight: dto.requiredRight,
+        rewardAmount: dto.rewardAmount,
+        rewardTitle: dto.rewardTitle,
+        order: dto.order,
+      },
+    });
+
+    return { ok: true, rank };
+  }
+
+  async updateRank(rankId: number, dto: CreateRankDto) {
+    const rank = await this.prisma.rank.findUnique({
+      where: { id: rankId },
+    });
+
+    if (!rank) {
+      throw new NotFoundException('Rank not found');
+    }
+
+    const updated = await this.prisma.rank.update({
+      where: { id: rankId },
+      data: {
+        name: dto.name,
+        requiredLeft: dto.requiredLeft,
+        requiredRight: dto.requiredRight,
+        rewardAmount: dto.rewardAmount,
+        rewardTitle: dto.rewardTitle,
+        order: dto.order,
+      },
+    });
+
+    return { ok: true, rank: updated };
+  }
+
+  async deleteRank(rankId: number) {
+  const rank = await this.prisma.rank.findUnique({
+    where: { id: rankId },
+  });
+
+  if (!rank) {
+    throw new NotFoundException('Rank not found');
+  }
+
+  await this.prisma.rank.delete({
+    where: { id: rankId },
+  });
+
+  return { ok: true };
+}
 }

@@ -344,12 +344,16 @@ export class WalletController {
     @Query('type') type: TransactionType,
     @Query('from') from?: string,
     @Query('to') to?: string,
+      @Query('skip') skip?: string,
+    @Query('take') take?: string,
   ) {
     return this.svc.getGainReport(
       req.user.id,
       type,
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
+      Number(skip) || 0,
+      Number(take) || 20,
     );
   }
 

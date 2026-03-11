@@ -1227,6 +1227,8 @@ export class WalletService {
     type: TransactionType,
     from?: Date,
     to?: Date,
+    skip = 0,
+    take = 10,
   ) {
     const where: any = {
       userId,
@@ -1248,6 +1250,15 @@ export class WalletService {
       }
     }
 
+    const txns = await this.prisma.walletTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      })
+    
+
+
     const agg = await this.prisma.walletTransaction.groupBy({
       by: ['type'],
       where,
@@ -1260,10 +1271,8 @@ export class WalletService {
 
     return {
       total: total.toFixed(),
-      breakdown: agg.map((r) => ({
-        type: r.type,
-        amount: r._sum.amount?.toString() ?? '0',
-      })),
+      transactions: txns,
+      count: txns.length
     };
   }
 

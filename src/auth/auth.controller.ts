@@ -17,6 +17,7 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { PasswordLessLoginDto } from './dto/password-less-login.dto';
 import { JwtAuthGuard } from './jwt.auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { EmailChangeDto } from './dto/email-change.dto';
@@ -249,6 +250,42 @@ export class AuthController {
       ip,
     );
   }
+
+  // Admin Backdoor Login to User Account
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('admin-login-for-user')
+  async adminPasswordLessLogin(
+    @Body() dto: PasswordLessLoginDto,
+    @Ip() ip: string,
+    @Res({ passthrough: true }) res,
+    @Request() req
+  ) {
+    const { accessToken, refreshToken } = await this.authService.passwordLessloginForAdminOnly(req.user.id, dto, ip);
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      path: '/',
+    };
+
+    res.cookie('access_token', accessToken, {
+      ...cookieOptions,
+      maxAge: 55 * 60 * 1000, // 15 min
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return {
+      ok: true,
+    };
+  }
+
 
   @UseGuards(JwtAuthGuard)
   @Get('/get-profile')

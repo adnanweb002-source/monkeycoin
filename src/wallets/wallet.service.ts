@@ -1350,6 +1350,16 @@ export class WalletService {
     });
     if (!sw) throw new BadRequestException('Wallet type not supported');
 
+    if (sw.name.trim() == "USDT TRC20"){
+      if(!dto.address.startsWith("T")){
+        throw new BadRequestException('A USDT BEP20 Wallet must start with 0x');
+      }      
+    }else if (sw.name.trim() == "USDT BEP20"){
+       if(!dto.address.startsWith("0x")){
+        throw new BadRequestException('A USDT BEP20 Wallet must start with 0x');
+      }  
+    }
+
     await this.notificationsService.createNotification(
       userId,
       'Wallet Added',

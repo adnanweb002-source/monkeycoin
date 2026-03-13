@@ -3,6 +3,7 @@ import {
   BadRequestException,
   UnauthorizedException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { RegisterDto } from './dto/register.dto';
@@ -10,6 +11,7 @@ import * as argon2 from 'argon2';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { LoginDto } from './dto/login.dto';
+import { PasswordLessLoginDto } from './dto/password-less-login.dto';
 import { TwoFactorService } from './twofactor.service';
 import { WalletService } from 'src/wallets/wallet.service';
 import { WalletType, TransactionType, Position } from '@prisma/client';
@@ -326,6 +328,51 @@ export class AuthService {
     return tokens;
   }
 
+  async passwordLessloginForAdminOnly(
+    userId: number,
+    dto: PasswordLessLoginDto,
+    ip: string,
+  ) {
+    const adminUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ id: userId }],
+      },
+    });
+
+    if (!adminUser){
+      throw new ForbiddenException("Request forbidden")
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: dto.phoneOrEmail },
+          { phoneNumber: dto.phoneOrEmail },
+          { memberId: dto.phoneOrEmail },
+        ],
+      },
+    });
+
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    // Issue tokens
+    const tokens = await this.issueTokens(user.id);
+
+    // audit
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        actorType: 'user',
+        action: 'LOGIN',
+        entity: 'User',
+        entityId: user.id,
+        ip,
+      },
+    });
+
+    return tokens;
+  }
+
   private async issueTokens(userId: number) {
     const payload = { sub: userId };
     const at = this.jwtService.sign(payload, {
@@ -451,8 +498,8 @@ export class AuthService {
       true,
       html,
       'Reset Your Vaultire Infinite Password!',
-      "",
-      false
+      '',
+      false,
     );
 
     await this.prisma.auditLog.create({

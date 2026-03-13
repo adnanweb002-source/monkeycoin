@@ -179,8 +179,10 @@ export class TwoFactorService {
   }
 
   async requestReset(email: string, ip: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ email: email }, { memberId: email }],
+      },
     });
 
     if (!user) {

@@ -40,11 +40,45 @@ export class AdminUsersService {
             supportedWallet: true, // <-- fetch related wallet type
           },
         },
+        twoFactorSecret: {},
       },
     });
+    const userIds = users.map((u) => u.id);
+    const deposits = await this.prisma.externalDeposit.groupBy({
+      by: ['userId'],
+      where: {
+        status: 'finished',
+        userId: { in: userIds },
+      },
+      _sum: {
+        fiatAmount: true,
+      },
+    });
+    const withdrawals = await this.prisma.withdrawalRequest.groupBy({
+      by: ['userId'],
+      where: {
+        userId: { in: userIds },
+        status: 'APPROVED',
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+    const depositMap = new Map(
+      deposits.map((d) => [d.userId, d._sum.fiatAmount || 0]),
+    );
+
+    const withdrawalMap = new Map(
+      withdrawals.map((w) => [w.userId, w._sum.amount || 0]),
+    );
+    const usersWithTotals = users.map((user) => ({
+      ...user,
+      totalDeposits: depositMap.get(user.id) || 0,
+      totalWithdrawals: withdrawalMap.get(user.id) || 0,
+    }));
     const total = await this.prisma.user.count();
 
-    return { users, total };
+    return { users: usersWithTotals, total };
   }
 
   async suspendUser(userId: number) {
@@ -437,18 +471,18 @@ export class AdminUsersService {
   }
 
   async deleteRank(rankId: number) {
-  const rank = await this.prisma.rank.findUnique({
-    where: { id: rankId },
-  });
+    const rank = await this.prisma.rank.findUnique({
+      where: { id: rankId },
+    });
 
-  if (!rank) {
-    throw new NotFoundException('Rank not found');
+    if (!rank) {
+      throw new NotFoundException('Rank not found');
+    }
+
+    await this.prisma.rank.delete({
+      where: { id: rankId },
+    });
+
+    return { ok: true };
   }
-
-  await this.prisma.rank.delete({
-    where: { id: rankId },
-  });
-
-  return { ok: true };
-}
 }

@@ -37,8 +37,8 @@ export class TwoFactorService {
   async generateSetup(userId: number, email: string) {
     const secret = speakeasy.generateSecret({
       length: 20,
-      name: `Monkey:${email}`,
-      issuer: 'Monkey',
+      name: `Vaultire:${email}`,
+      issuer: 'Vaultire Infinite',
     });
     const otpauthUrl = secret.otpauth_url;
     // Do not store raw secret until verification step
@@ -96,7 +96,7 @@ export class TwoFactorService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { isG2faEnabled: true },
+      data: { isG2faEnabled: true, g2faSecret: rec.secretEnc },
     });
 
     const html = EmailTemplates.g2faEnabled(
@@ -132,14 +132,13 @@ export class TwoFactorService {
   async adminReset(targetUserId: number, adminId: number, ip: string) {
     // delete or disable the secret
 
-     const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: targetUserId },
     });
 
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
 
     await this.prisma.twoFactorSecret.updateMany({
       where: { userId: targetUserId },
@@ -164,7 +163,6 @@ export class TwoFactorService {
       'G2FA Reset by Admin',
       '/profile?tab=security',
     );
-
 
     await this.prisma.auditLog.create({
       data: {
@@ -221,8 +219,8 @@ export class TwoFactorService {
       true,
       html,
       'G2FA Reset Request Under Review',
-      "",
-      false
+      '',
+      false,
     );
 
     await this.prisma.auditLog.create({

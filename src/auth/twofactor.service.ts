@@ -132,13 +132,14 @@ export class TwoFactorService {
   async adminReset(targetUserId: number, adminId: number, ip: string) {
     // delete or disable the secret
 
-    const user = await this.prisma.user.findUnique({
+     const user = await this.prisma.user.findUnique({
       where: { id: targetUserId },
     });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
 
     await this.prisma.twoFactorSecret.updateMany({
       where: { userId: targetUserId },
@@ -164,6 +165,7 @@ export class TwoFactorService {
       '/profile?tab=security',
     );
 
+
     await this.prisma.auditLog.create({
       data: {
         actorId: adminId,
@@ -178,11 +180,9 @@ export class TwoFactorService {
     return { ok: true };
   }
 
-  async requestReset(email: string, ip: string) {
-    const user = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email: email }, { memberId: email }],
-      },
+  async requestReset(email: string, memberId: string, ip: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email, memberId},
     });
 
     if (!user) {
@@ -221,8 +221,8 @@ export class TwoFactorService {
       true,
       html,
       'G2FA Reset Request Under Review',
-      '',
-      false,
+      "",
+      false
     );
 
     await this.prisma.auditLog.create({

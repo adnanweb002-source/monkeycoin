@@ -259,9 +259,14 @@ export class AuthController {
     @Body() dto: PasswordLessLoginDto,
     @Ip() ip: string,
     @Res({ passthrough: true }) res,
-    @Request() req
+    @Request() req,
   ) {
-    const { accessToken, refreshToken } = await this.authService.passwordLessloginForAdminOnly(req.user.id, dto, ip);
+    const { accessToken, refreshToken } =
+      await this.authService.passwordLessloginForAdminOnly(
+        req.user.id,
+        dto,
+        ip,
+      );
 
     const cookieOptions = {
       httpOnly: true,
@@ -286,7 +291,6 @@ export class AuthController {
     };
   }
 
-
   @UseGuards(JwtAuthGuard)
   @Get('/get-profile')
   async getUserProfile(@Request() req) {
@@ -299,7 +303,11 @@ export class AuthController {
   }
 
   @Post('/reset-password')
-  async resetPassword(@Body() dto: ResetPasswordDto, @Request() req, @Ip() ip: string) {
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Request() req,
+    @Ip() ip: string,
+  ) {
     return this.authService.resetPassword(
       dto.email,
       dto.token,
@@ -309,8 +317,13 @@ export class AuthController {
   }
 
   @Post('/request-2fa-reset')
-  async requestTwoFactorReset(@Body('email') email: string, @Request() req, @Ip() ip: string) {
-    return this.twoFactorService.requestReset(email, ip);
+  async requestTwoFactorReset(
+    @Body('email') email: string,
+    @Body('memberId') memberId: string,
+    @Request() req,
+    @Ip() ip: string,
+  ) {
+    return this.twoFactorService.requestReset(email, memberId, ip);
   }
 
   @Post('/reset-2fa')

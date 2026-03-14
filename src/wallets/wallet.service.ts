@@ -1238,6 +1238,10 @@ export class WalletService {
       },
     };
 
+    if(type == TransactionType.PACKAGE_PURCHASE){
+      where.direction = 'DEBIT'
+    }
+
     if (from || to) {
       where.createdAt = {};
 

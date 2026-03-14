@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { Logger } from '@nestjs/common';
 import { MailService } from 'src/mail/mail.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class NotificationsService {
@@ -30,6 +31,51 @@ export class NotificationsService {
     if (createPushNotification) {
       // Create push notification logic here
       notification = await this.prisma.notification.create({
+        data: {
+          userId,
+          title,
+          description,
+          redirectionRoute: redirectUrl,
+        },
+      });
+
+      /* Websocket */
+
+      this.gateway.emitToUser(userId, notification);
+    }
+
+    /* Email */
+
+    if (sendMail && emailHtml && emailSubject) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (user?.email) {
+        await this.mailService.sendMail(user.email, emailSubject, emailHtml);
+      }
+    }
+
+    return notification;
+  }
+
+  async createNotificationTransaction(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    title: string,
+    description: string,
+    sendMail?: boolean,
+    emailHtml?: string,
+    emailSubject?: string,
+    redirectUrl?: string,
+    createPushNotification = true,
+  ) {
+    /* Save notification */
+    let notification: any;
+    
+    if (createPushNotification) {
+      // Create push notification logic here
+      notification = await tx.notification.create({
         data: {
           userId,
           title,

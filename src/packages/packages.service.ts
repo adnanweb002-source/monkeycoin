@@ -98,20 +98,30 @@ export class PackagesService {
     while (current?.sponsorId) {
       const sponsor = await tx.user.findUnique({
         where: { id: current.sponsorId },
-        select: { id: true, position: true, leftBv: true, rightBv: true },
+        select: {
+          id: true,
+          position: true,
+          leftBv: true,
+          rightBv: true,
+          rankLeftVolume: true,
+          rankRightVolume: true,
+        },
       });
 
       if (!sponsor) break;
 
       const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
 
-      const rankField = current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
+      const rankField =
+        current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
 
       await tx.user.update({
         where: { id: sponsor.id },
         data: {
           [field]: new Decimal(sponsor[field].toString()).plus(bv).toFixed(),
-          [rankField]: new Decimal(sponsor[rankField].toString()).plus(bv).toFixed(),
+          [rankField]: new Decimal(sponsor[rankField].toString())
+            .plus(bv)
+            .toFixed(),
         },
       });
 
@@ -239,7 +249,7 @@ export class PackagesService {
     return this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
       for (const p of parts) {
-        await this.walletService.debitWallet({
+        await this.walletService.debitWalletTransaction(tx, {
           userId: buyerId,
           walletType: p.wallet,
           amount: p.amount,
@@ -310,7 +320,7 @@ export class PackagesService {
         },
       });
 
-      await this.prisma.user.update({
+      await tx.user.update({
         where: { id: user.id },
         data: {
           activePackageCount: { increment: 1 },
@@ -339,7 +349,7 @@ export class PackagesService {
           let response: any = null;
 
           if (bonusAmt.gt(0)) {
-            response = await this.walletService.creditWallet({
+            response = await this.walletService.creditWalletTransaction(tx, {
               userId: user.sponsorId,
               walletType: WalletType.I_WALLET,
               amount: bonusAmt.toString(),
@@ -356,7 +366,8 @@ export class PackagesService {
             response?.balanceAfter,
           );
 
-          await this.notificationsService.createNotification(
+          await this.notificationsService.createNotificationTransaction(
+            tx,
             user.sponsorId,
             'Referral Bonus Earned',
             `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
@@ -378,7 +389,8 @@ export class PackagesService {
           'transaction Id',
           parts.map((p) => `${p.wallet}: $${p.amount}`).join(', '),
         );
-        await this.notificationsService.createNotification(
+        await this.notificationsService.createNotificationTransaction(
+          tx,
           buyerId,
           `Package Purchased for ${user.firstName} ${user.lastName}`,
           `You have successfully purchased the ${pkg.name} package for ${user.firstName} ${user.lastName}. The package will be active from ${startDate.toDateString()} to ${endDate.toDateString()}.`,
@@ -395,7 +407,8 @@ export class PackagesService {
           buyer.firstName + ' ' + buyer.lastName,
           amt.toFixed(),
         );
-        await this.notificationsService.createNotification(
+        await this.notificationsService.createNotificationTransaction(
+          tx,
           user.id,
           'Package Purchased for You',
           `The ${pkg.name} package has been purchased for you by ${buyer.firstName} ${buyer.lastName}. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
@@ -415,7 +428,8 @@ export class PackagesService {
           '/profile?tab=packages',
         );
 
-        await this.notificationsService.createNotification(
+        await this.notificationsService.createNotificationTransaction(
+          tx,
           user.id,
           'Package Purchased',
           `You have successfully purchased the ${pkg.name} package. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,

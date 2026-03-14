@@ -252,6 +252,81 @@ export class WalletService {
     });
   }
 
+  async creditWalletTransaction(
+  tx: Prisma.TransactionClient,
+  params: {
+    userId: number;
+    walletType: WalletType;
+    amount: string;
+    txType: TransactionType;
+    purpose?: string;
+    meta?: any;
+  },
+) {
+  const { userId, walletType, amount, txType, purpose, meta } = params;
+
+  const amt = new Decimal(amount);
+
+  if (amt.lte(0)) {
+    throw new BadRequestException('Amount must be positive');
+  }
+
+  const wallet = await tx.wallet.findUnique({
+    where: {
+      userId_type: {
+        userId,
+        type: walletType,
+      } as any,
+    },
+  });
+
+  if (!wallet) {
+    throw new NotFoundException('Wallet not found');
+  }
+
+  const currentBalance = new Decimal(wallet.balance ?? 0);
+  const newBalance = currentBalance.plus(amt);
+
+  await tx.wallet.update({
+    where: { id: wallet.id },
+    data: {
+      balance: newBalance.toFixed(),
+    },
+  });
+
+  const txNo = generateTxNumber();
+
+  await tx.walletTransaction.create({
+    data: {
+      walletId: wallet.id,
+      userId,
+      type: txType,
+      amount: amt.toFixed(),
+      direction: 'CREDIT',
+      purpose: purpose ?? txType,
+      balanceAfter: newBalance.toFixed(),
+      txNumber: txNo,
+      meta: meta ?? Prisma.JsonNull,
+    },
+  });
+
+  await this.notificationsService.createNotification(
+    userId,
+    'Wallet Credited',
+    `Your ${walletType} wallet has been credited with $${amt.toFixed()}.`,
+    false,
+    undefined,
+    undefined,
+    '/wallet/transactions',
+  );
+
+  return {
+    walletId: wallet.id,
+    balanceAfter: newBalance.toFixed(),
+    txNumber: txNo,
+  };
+}
+
   // core: debit wallet (atomic)
   async debitWallet(params: {
     userId: number;
@@ -332,6 +407,94 @@ export class WalletService {
     });
   }
 
+  async debitWalletTransaction(
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: number;
+      walletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
+      amount: string;
+      txType: TransactionType;
+      purpose?: string;
+      allowNegative?: boolean;
+      meta?: any;
+    },
+  ) {
+    const {
+      userId,
+      walletType,
+      amount,
+      txType,
+      purpose,
+      allowNegative = false,
+      meta,
+    } = params;
+
+    const amt = new Decimal(amount);
+
+    if (amt.lte(0)) {
+      throw new BadRequestException('Amount must be positive');
+    }
+
+    const canDebit = await this.canDebitWallet({ userId, walletType, amount });
+
+    if (!canDebit.ok) {
+      throw new BadRequestException(`Cannot debit wallet: ${canDebit.reason}`);
+    }
+
+    const wallet = await tx.wallet.findFirst({
+      where: { userId, type: walletType },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    const balance = new Decimal(wallet.balance ?? 0);
+    const newBalance = balance.minus(amt);
+
+    if (!allowNegative && newBalance.lt(0)) {
+      throw new BadRequestException('Insufficient balance');
+    }
+
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: {
+        balance: newBalance.toFixed(),
+      },
+    });
+
+    const txNo = generateTxNumber();
+
+    await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        userId,
+        type: txType,
+        amount: amt.toFixed(),
+        direction: 'DEBIT',
+        purpose: purpose ?? txType,
+        balanceAfter: newBalance.toFixed(),
+        txNumber: txNo,
+        meta: meta ?? Prisma.JsonNull,
+      },
+    });
+
+    await this.notificationsService.createNotification(
+      userId,
+      'Wallet Debited',
+      `Your ${walletType} wallet has been debited by $${amt.toFixed()}.`,
+      false,
+      undefined,
+      undefined,
+      '/wallet/transactions',
+    );
+
+    return {
+      walletId: wallet.id,
+      balanceAfter: newBalance.toFixed(),
+      txNumber: txNo,
+    };
+  }
   // internal fund transfer: atomic debit + credit
   // transferMode check: DOWNLINE_ONLY or CROSSLINE
   async transferFunds(params: {
@@ -656,7 +819,7 @@ export class WalletService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const response =  await this.creditWallet({
+    const response = await this.creditWallet({
       userId,
       walletType: 'F_WALLET',
       amount,
@@ -665,14 +828,13 @@ export class WalletService {
       meta: { externalTxId, ...meta },
     });
 
-     const html = EmailTemplates.deposit(
+    const html = EmailTemplates.deposit(
       user.firstName + ' ' + user.lastName,
       amount,
       'USD',
-      externalTxId || "",
-      response.balanceAfter
-      
-    )
+      externalTxId || '',
+      response.balanceAfter,
+    );
 
     await this.notificationsService.createNotification(
       userId,
@@ -683,7 +845,7 @@ export class WalletService {
       'Deposit Successful - Funds Added',
       '/wallet/deposit-history',
     );
-      return response;
+    return response;
   }
 
   // helper: check if candidateId is in the downline of userId
@@ -1238,8 +1400,8 @@ export class WalletService {
       },
     };
 
-    if(type == TransactionType.PACKAGE_PURCHASE){
-      where.direction = 'DEBIT'
+    if (type == TransactionType.PACKAGE_PURCHASE) {
+      where.direction = 'DEBIT';
     }
 
     if (from || to) {
@@ -1255,13 +1417,11 @@ export class WalletService {
     }
 
     const txns = await this.prisma.walletTransaction.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take,
-      })
-    
-
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take,
+    });
 
     const agg = await this.prisma.walletTransaction.groupBy({
       by: ['type'],
@@ -1276,7 +1436,7 @@ export class WalletService {
     return {
       total: total.toFixed(),
       transactions: txns,
-      count: txns.length
+      count: txns.length,
     };
   }
 
@@ -1354,14 +1514,14 @@ export class WalletService {
     });
     if (!sw) throw new BadRequestException('Wallet type not supported');
 
-    if (sw.name.trim() == "USDT TRC20"){
-      if(!dto.address.startsWith("T")){
+    if (sw.name.trim() == 'USDT TRC20') {
+      if (!dto.address.startsWith('T')) {
         throw new BadRequestException('A USDT BEP20 Wallet must start with 0x');
-      }      
-    }else if (sw.name.trim() == "USDT BEP20"){
-       if(!dto.address.startsWith("0x")){
+      }
+    } else if (sw.name.trim() == 'USDT BEP20') {
+      if (!dto.address.startsWith('0x')) {
         throw new BadRequestException('A USDT BEP20 Wallet must start with 0x');
-      }  
+      }
     }
 
     await this.notificationsService.createNotification(

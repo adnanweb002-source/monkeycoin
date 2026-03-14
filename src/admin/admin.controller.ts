@@ -161,4 +161,11 @@ export class AdminController {
   deleteRank(@Param('id') id: number) {
     return this.adminService.deleteRank(Number(id));
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('/stats')
+  getStats() {
+    return this.adminService.getStats()
+  }
 }

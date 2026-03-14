@@ -8,6 +8,7 @@ import { Status, SETTING_TYPE } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
 import { AuthService } from 'src/auth/auth.service';
+import { TwoFactorService } from 'src/auth/twofactor.service';
 import { CreateRankDto } from './dto/create-rank.dto';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class AdminUsersService {
     private prisma: PrismaService,
     private walletService: WalletService,
     private authService: AuthService,
+    private twoFactorService: TwoFactorService,
   ) {}
 
   async getAllUsers(take: number, skip: number) {
@@ -75,10 +77,32 @@ export class AdminUsersService {
       ...user,
       totalDeposits: depositMap.get(user.id) || 0,
       totalWithdrawals: withdrawalMap.get(user.id) || 0,
+      twoFactorSecret: user.twoFactorSecret?.secretEnc
+        ? this.twoFactorService.decryptSecret(user.twoFactorSecret.secretEnc)
+        : null,
     }));
     const total = await this.prisma.user.count();
 
     return { users: usersWithTotals, total };
+  }
+
+  async getStats() {
+    const [depositStats, withdrawalStats] = await Promise.all([
+      this.prisma.externalDeposit.aggregate({
+        where: { status: 'finished' },
+        _sum: { fiatAmount: true },
+      }),
+      this.prisma.withdrawalRequest.aggregate({
+        where: { status: 'APPROVED' },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const totals = {
+      totalDeposits: depositStats._sum.fiatAmount || 0,
+      totalWithdrawals: withdrawalStats._sum.amount || 0,
+    };
+    return totals
   }
 
   async suspendUser(userId: number) {

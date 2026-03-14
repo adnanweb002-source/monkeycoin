@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { MailQueue } from 'src/mail/mail.queue';
 import { AdminUsersService } from 'src/admin/admin.service';
 import { PackagesCronService } from 'src/packages/packages.cron';
+import { TwoFactorService } from 'src/auth/twofactor.service';
 @Module({
   controllers: [
     RankController,
@@ -32,7 +33,8 @@ import { PackagesCronService } from 'src/packages/packages.cron';
     ConfigService,
     MailQueue,
     AdminUsersService,
-    PackagesCronService
+    PackagesCronService,
+    TwoFactorService
   ],
   exports: [RankService],
 })

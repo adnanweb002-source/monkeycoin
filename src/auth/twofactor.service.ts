@@ -28,7 +28,7 @@ export class TwoFactorService {
     return cipher.toString();
   }
 
-  private decryptSecret(encrypted: string) {
+  decryptSecret(encrypted: string) {
     const key = this.cfg.get<string>('AES_KEY');
     const bytes = CryptoJS.AES.decrypt(encrypted, key);
     return bytes.toString(CryptoJS.enc.Utf8);

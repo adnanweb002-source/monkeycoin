@@ -8,7 +8,7 @@ import {
   Get,
   Body,
   Query,
-  Delete
+  Delete,
 } from '@nestjs/common';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -20,6 +20,7 @@ import { PackagesCronService } from 'src/packages/packages.cron';
 import { WalletService } from 'src/wallets/wallet.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { CreateRankDto } from './dto/create-rank.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -68,6 +69,10 @@ export class AdminUsersController {
       Number(userId),
       req.body.password,
     );
+  }
+  @Patch(':userId/profile')
+  updateProfile(@Param('userId') userId: string, @Body() dto: UpdateUserDto) {
+    return this.svc.updateUserProfile(Number(userId), dto);
   }
 }
 
@@ -147,7 +152,6 @@ export class AdminController {
     return this.adminService.createRank(dto);
   }
 
-
   @Patch('/ranks/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
@@ -166,6 +170,6 @@ export class AdminController {
   @Roles(Role.ADMIN)
   @Get('/stats')
   getStats() {
-    return this.adminService.getStats()
+    return this.adminService.getStats();
   }
 }

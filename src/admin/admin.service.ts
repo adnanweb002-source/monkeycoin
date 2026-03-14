@@ -10,6 +10,7 @@ import { WalletService } from 'src/wallets/wallet.service';
 import { AuthService } from 'src/auth/auth.service';
 import { TwoFactorService } from 'src/auth/twofactor.service';
 import { CreateRankDto } from './dto/create-rank.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class AdminUsersService {
@@ -102,7 +103,7 @@ export class AdminUsersService {
       totalDeposits: depositStats._sum.fiatAmount || 0,
       totalWithdrawals: withdrawalStats._sum.amount || 0,
     };
-    return totals
+    return totals;
   }
 
   async suspendUser(userId: number) {
@@ -508,5 +509,43 @@ export class AdminUsersService {
     });
 
     return { ok: true };
+  }
+
+  async updateUserProfile(userId: number, dto: UpdateUserDto) {
+    const data: any = {};
+
+    if (dto.name !== undefined) {
+      const [firstName, ...rest] = dto.name.trim().split(' ');
+      data.firstName = firstName;
+      data.lastName = rest.join(' ');
+    }
+
+    if (dto.email !== undefined) {
+      data.email = dto.email;
+    }
+
+    if (dto.phone !== undefined) {
+      data.phoneNumber = dto.phone;
+    }
+
+    const user = await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phoneNumber: true,
+        updatedAt: true,
+      },
+    });
+
+    return {
+      ok: true,
+      user,
+    };
   }
 }

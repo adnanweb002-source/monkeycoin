@@ -185,21 +185,22 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('change-email')
-  async changeEmail(
-    @Request() req,
-    @Body() dto: EmailChangeDto,
-    @Ip() ip: string,
-  ) {
+  async changeEmail(@Request() req, @Body() dto: EmailChangeDto) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.authService.changeEmail(req.user.id, dto, ip);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('change-avatar')
-  async changeAvatar(
-    @Request() req,
-    @Body() dto: AvatarChangeDto,
-    @Ip() ip: string,
-  ) {
+  async changeAvatar(@Request() req, @Body() dto: AvatarChangeDto) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
+    console.log("the ip address", ip, forwarded)
     return this.authService.changeAvatar(req.user.id, dto, ip);
   }
 

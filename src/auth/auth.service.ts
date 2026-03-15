@@ -18,6 +18,7 @@ import { WalletType, TransactionType, Position } from '@prisma/client';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import * as crypto from 'crypto';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
+import axios from 'axios';
 
 @Injectable()
 export class AuthService {
@@ -339,8 +340,8 @@ export class AuthService {
       },
     });
 
-    if (!adminUser){
-      throw new ForbiddenException("Request forbidden")
+    if (!adminUser) {
+      throw new ForbiddenException('Request forbidden');
     }
 
     const user = await this.prisma.user.findFirst({
@@ -516,6 +517,14 @@ export class AuthService {
     return { ok: true };
   }
 
+  async getLocation(ip: string) {
+    const geo = await axios.get(`http://ip-api.com/json/${ip}`);
+
+    const location = `${geo.data.city}, ${geo.data.country}`;
+
+    return location;
+  }
+
   async resetPassword(
     email: string,
     token: string,
@@ -584,11 +593,13 @@ export class AuthService {
       });
     });
 
+    const location = await this.getLocation(ip)
+
     const html = EmailTemplates.passwordChanged(
       user.firstName + ' ' + user.lastName,
       new Date().toLocaleString(),
       ip,
-      'Location',
+      location,
     );
 
     await this.notificationsService.createNotification(
@@ -645,12 +656,12 @@ export class AuthService {
       where: { userId, revoked: false },
       data: { revoked: true },
     });
-
+    const location = await this.getLocation(ip)
     const html = EmailTemplates.passwordChanged(
       user.firstName + ' ' + user.lastName,
       new Date().toLocaleString(),
       ip,
-      'Location',
+      location,
     );
 
     await this.notificationsService.createNotification(

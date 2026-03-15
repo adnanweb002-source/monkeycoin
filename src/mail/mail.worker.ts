@@ -20,8 +20,8 @@ new Worker(
       from: process.env.SMTP_FROM,
       to,
       subject,
-      text: body,
-      html: `<p>${body.replace(/\n/g, '<br/>')}</p>`,
+      text: body.replace(/<[^>]*>/g, ''),
+      html: body,
     });
   },
   {

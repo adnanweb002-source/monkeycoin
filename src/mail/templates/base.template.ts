@@ -7,78 +7,91 @@ export const baseEmailTemplate = (
 ) => {
   const button = buttonLink
     ? `
-  <div style="text-align:center;margin:30px 0;">
-    <a href="${buttonLink}" style="background:#d4a536;color:#000;padding:14px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">
-      ${buttonText}
-    </a>
-  </div>`
+<tr>
+<td align="center" style="padding:20px 0;">
+<a href="${buttonLink}" style="
+background:#d4a536;
+color:#000;
+text-decoration:none;
+padding:12px 22px;
+border-radius:4px;
+font-weight:bold;
+display:inline-block;
+font-size:14px;">
+${buttonText}
+</a>
+</td>
+</tr>
+`
     : '';
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
-<head>
-<meta charset="UTF-8">
-<style>
-body{
-  background:#f4f6f9;
-  font-family:Arial, Helvetica, sans-serif;
-  padding:30px;
-}
-.container{
-  max-width:600px;
-  margin:auto;
-  background:#ffffff;
-  border-radius:10px;
-  overflow:hidden;
-}
-.header{
-  background:#2f3b52;
-  text-align:center;
-  padding:15px;
-}
-.content{
-  padding:25px;
-  color:#333;
-}
-.footer{
-  background:#f3f3f3;
-  padding:20px;
-  text-align:center;
-  font-size:13px;
-  color:#666;
-}
-</style>
-</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;">
 
-<body>
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td align="center">
 
-<div class="container">
+<table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
 
-<div class="header">
-<img src="https://gogex.xyz/src/assets/mail-banner.png" style="width:100%; max-height:285px; object-fit:cover; display:block;"/>
-</div>
+<!-- HEADER -->
+<tr>
+<td align="center" style="padding:20px 0;border-bottom:1px solid #eee;">
+<img src="https://gogex.xyz/src/assets/logo-light.png" width="140" style="display:block;border:0;">
+</td>
+</tr>
 
-<div class="content">
+<!-- CONTENT -->
+<tr>
+<td style="padding:30px 40px;color:#333;font-size:14px;line-height:1.6;">
 
-<h2>${title}</h2>
+<h2 style="margin:0 0 18px 0;font-size:20px;color:#111;">
+${title}
+</h2>
 
-<div style="line-height:1.7;font-size:15px;">
 ${message}
-</div>
+
+</td>
+</tr>
 
 ${button}
 
+
+<!-- FOOTER -->
+<tr>
+<td align="center" style="background:#1f2937;padding:20px;color:#cbd5e1;font-size:12px;">
+
+<div style="margin-bottom:10px;">
+This email is confidential and intended only for the recipient.<br>
+Vaultire Infinite will never ask for your password or private keys via email.
 </div>
 
-<div class="footer">
+<table cellpadding="0" cellspacing="0" align="center">
+<tr>
+<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" width="20"></a></td>
+<td width="10"></td>
+<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="20"></a></td>
+<td width="10"></td>
+<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111646.png" width="20"></a></td>
+<td width="10"></td>
+<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/733/733585.png" width="20"></a></td>
+</tr>
+</table>
+
+<div style="margin-top:10px;">
 ${footer || 'Vaultire Infinite | Secure. Smart. Scalable.'}<br>
-www.vaultireinfinite.com
 </div>
 
-</div>
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
 
 </body>
-</html>
-`;
+</html>`;
 };

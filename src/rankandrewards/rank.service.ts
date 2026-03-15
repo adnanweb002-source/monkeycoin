@@ -52,6 +52,7 @@ export class RankService {
         rewardTitle: rank.rewardTitle,
         requiredLeft: rank.requiredLeft,
         requiredRight: rank.requiredRight,
+        order: rank.order,
         claimable,
         unlocked,
       };

@@ -253,79 +253,79 @@ export class WalletService {
   }
 
   async creditWalletTransaction(
-  tx: Prisma.TransactionClient,
-  params: {
-    userId: number;
-    walletType: WalletType;
-    amount: string;
-    txType: TransactionType;
-    purpose?: string;
-    meta?: any;
-  },
-) {
-  const { userId, walletType, amount, txType, purpose, meta } = params;
+    tx: Prisma.TransactionClient,
+    params: {
+      userId: number;
+      walletType: WalletType;
+      amount: string;
+      txType: TransactionType;
+      purpose?: string;
+      meta?: any;
+    },
+  ) {
+    const { userId, walletType, amount, txType, purpose, meta } = params;
 
-  const amt = new Decimal(amount);
+    const amt = new Decimal(amount);
 
-  if (amt.lte(0)) {
-    throw new BadRequestException('Amount must be positive');
-  }
+    if (amt.lte(0)) {
+      throw new BadRequestException('Amount must be positive');
+    }
 
-  const wallet = await tx.wallet.findUnique({
-    where: {
-      userId_type: {
+    const wallet = await tx.wallet.findUnique({
+      where: {
+        userId_type: {
+          userId,
+          type: walletType,
+        } as any,
+      },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    const currentBalance = new Decimal(wallet.balance ?? 0);
+    const newBalance = currentBalance.plus(amt);
+
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: {
+        balance: newBalance.toFixed(),
+      },
+    });
+
+    const txNo = generateTxNumber();
+
+    await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
         userId,
-        type: walletType,
-      } as any,
-    },
-  });
+        type: txType,
+        amount: amt.toFixed(),
+        direction: 'CREDIT',
+        purpose: purpose ?? txType,
+        balanceAfter: newBalance.toFixed(),
+        txNumber: txNo,
+        meta: meta ?? Prisma.JsonNull,
+      },
+    });
 
-  if (!wallet) {
-    throw new NotFoundException('Wallet not found');
-  }
-
-  const currentBalance = new Decimal(wallet.balance ?? 0);
-  const newBalance = currentBalance.plus(amt);
-
-  await tx.wallet.update({
-    where: { id: wallet.id },
-    data: {
-      balance: newBalance.toFixed(),
-    },
-  });
-
-  const txNo = generateTxNumber();
-
-  await tx.walletTransaction.create({
-    data: {
-      walletId: wallet.id,
+    await this.notificationsService.createNotification(
       userId,
-      type: txType,
-      amount: amt.toFixed(),
-      direction: 'CREDIT',
-      purpose: purpose ?? txType,
+      'Wallet Credited',
+      `Your ${walletType} wallet has been credited with $${amt.toFixed()}.`,
+      false,
+      undefined,
+      undefined,
+      '/wallet/transactions',
+    );
+
+    return {
+      walletId: wallet.id,
       balanceAfter: newBalance.toFixed(),
       txNumber: txNo,
-      meta: meta ?? Prisma.JsonNull,
-    },
-  });
-
-  await this.notificationsService.createNotification(
-    userId,
-    'Wallet Credited',
-    `Your ${walletType} wallet has been credited with $${amt.toFixed()}.`,
-    false,
-    undefined,
-    undefined,
-    '/wallet/transactions',
-  );
-
-  return {
-    walletId: wallet.id,
-    balanceAfter: newBalance.toFixed(),
-    txNumber: txNo,
-  };
-}
+    };
+  }
 
   // core: debit wallet (atomic)
   async debitWallet(params: {
@@ -755,7 +755,7 @@ export class WalletService {
       );
     }
 
-    if(user.lockWithdrawalsTillTarget){
+    if (user.lockWithdrawalsTillTarget) {
       throw new ForbiddenException(
         'Please reach your target to place withdrawal requests',
       );
@@ -1293,6 +1293,9 @@ export class WalletService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
+        include: {
+          wallet: {},
+        },
       });
       return requests;
     } else {

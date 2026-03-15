@@ -802,6 +802,8 @@ export class AuthService {
         leftBv: true,
         rightBv: true,
         avatarId: true,
+        isWithdrawalRestricted: true,
+        lockWithdrawalsTillTarget: true
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

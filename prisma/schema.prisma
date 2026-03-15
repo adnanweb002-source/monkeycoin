@@ -47,6 +47,7 @@ enum TransactionType {
   REFERRAL_INCOME
   ROI_CREDIT
   RANK_REWARD
+  ADMIN_BONUS
   ADJUSTMENT
 }
 
@@ -89,6 +90,8 @@ model User {
   rankLeftVolume     Decimal   @default(0) @db.Decimal(18,2)
   rankRightVolume    Decimal   @default(0) @db.Decimal(18,2)
 
+  lockWithdrawalsTillTarget Boolean @default(false)
+
   // Self-relations (binary tree)
   sponsor        User?     @relation("UserSponsor", fields: [sponsorId], references: [id])
   sponsoredUsers User[]    @relation("UserSponsor")
@@ -113,6 +116,7 @@ model User {
   externalDeposits   ExternalDeposit[]
   twoFactorResetTokens TwoFactorResetToken[]
   passwordResetTokens PasswordResetToken[]
+  targetAssignment TargetAssignment[]
 
   queries Query[]
   queryReplies QueryReply[]
@@ -120,6 +124,8 @@ model User {
   notifications Notification[]
   rankClaims    RankRewardLog[]
   @@map("users")
+
+  @@index([memberId, lockWithdrawalsTillTarget])
 }
 
 //
@@ -356,14 +362,18 @@ model PackagePurchase {
   createdAt       DateTime @default(now())
   splitConfig Json     // { F:40, M:60 }
 
+  isTarget        Boolean  @default(false)
+
   user    User    @relation("PurchasedUser", fields: [userId], references: [id])
   buyer   User    @relation("BuyerUser", fields: [buyerId], references: [id])
   package Package @relation(fields: [packageId], references: [id])
 
   packageIncomeLog PackageIncomeLog[]
+  targetAssignment TargetAssignment[]
 
   @@index([userId])
   @@map("package_purchases")
+  @@index([isTarget])
 }
 
 enum QueryStatus {
@@ -568,4 +578,51 @@ model RankRewardLog {
   rank      Rank     @relation(fields: [rankId], references: [id])
 
   @@unique([userId, rankId])
+}
+
+enum TargetMultiplier {
+  X1
+  X2
+  X3
+  X4
+  X5
+  X7
+  X10
+}
+
+enum TargetSalesType {
+  DIRECT
+  INDIRECT
+}
+
+model TargetAssignment {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  purchaseId Int
+
+  packageAmount Decimal @db.Decimal(18,2)
+
+  multiplier TargetMultiplier
+  salesType TargetSalesType
+
+  targetAmount Decimal @db.Decimal(18,2)
+  achieved Decimal @default(0) @db.Decimal(18,2)
+
+  completed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields:[userId], references:[id])
+  purchase PackagePurchase @relation(fields:[purchaseId], references:[id])
+
+  @@index([userId, completed, salesType])
+}
+
+model DepositBonus {
+   id Int @id @default(autoincrement())
+   bonusPercentage Int
+   startDate DateTime
+   endDate DateTime
 }

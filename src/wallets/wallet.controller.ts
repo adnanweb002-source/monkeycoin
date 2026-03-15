@@ -231,6 +231,33 @@ export class WalletController {
         purpose: 'Deposit via NOWPayments',
         meta: payload,
       });
+
+      const today = new Date();
+
+      // Find the active bonus for the current date
+      const activeBonus = await this.prisma.depositBonus.findFirst({
+        where: {
+          startDate: { lte: today },
+          endDate: { gte: today },
+        },
+      });
+
+      let bonusAmount = 0;
+
+      if (activeBonus) {
+        bonusAmount = (actually_paid * activeBonus.bonusPercentage) / 100;
+
+        if (bonusAmount > 0) {
+          await this.svc.creditWallet({
+            userId: dep.userId,
+            walletType: WalletType.BONUS_WALLET,
+            amount: bonusAmount.toString(),
+            txType: TransactionType.ADMIN_BONUS,
+            purpose: `Deposit bonus (${activeBonus.bonusPercentage}%) for deposit`,
+            meta: payload,
+          });
+        }
+      }
     }
 
     return { ok: true };
@@ -344,7 +371,7 @@ export class WalletController {
     @Query('type') type: TransactionType,
     @Query('from') from?: string,
     @Query('to') to?: string,
-      @Query('skip') skip?: string,
+    @Query('skip') skip?: string,
     @Query('take') take?: string,
   ) {
     return this.svc.getGainReport(

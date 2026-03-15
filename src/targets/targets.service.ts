@@ -1,0 +1,277 @@
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma.service';
+import { PackagesService } from 'src/packages/packages.service';
+import { UpdateTargetDto } from './dto/update-target.dto';
+import { TargetsQueryDto } from './dto/targets-query.dto';
+import { PurchasePackageDto } from 'src/packages/dto/purchase-package.dto';
+import { AssignTargetDto } from './dto/assign-target.dto';
+import { Role } from 'src/auth/enums/role.enum';
+import Decimal from 'decimal.js';
+
+@Injectable()
+export class TargetsService {
+  constructor(
+    private prisma: PrismaService,
+    private packageService: PackagesService,
+  ) {}
+
+  // ADMIN — list all targets
+  async listAllTargets(query: TargetsQueryDto) {
+    const {
+      page = 1,
+      limit = 20,
+      memberId,
+      completed,
+      salesType,
+      startDate,
+      endDate,
+    } = query;
+
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (completed !== undefined) {
+      where.completed = completed;
+    }
+
+    if (salesType) {
+      where.salesType = salesType;
+    }
+
+    if (memberId) {
+      where.user = {
+        memberId: {
+          contains: memberId,
+          mode: 'insensitive',
+        },
+      };
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    const [targets, total] = await this.prisma.$transaction([
+      this.prisma.targetAssignment.findMany({
+        where,
+        skip: Number(skip),
+        take: Number(limit),
+        include: {
+          user: {
+            select: {
+              id: true,
+              memberId: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          purchase: {
+            select: {
+              id: true,
+              amount: true,
+              packageId: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.targetAssignment.count({ where }),
+    ]);
+
+    return {
+      data: targets,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  // ADMIN — update target
+  async updateTarget(id: number, dto: UpdateTargetDto) {
+    const target = await this.prisma.targetAssignment.findUnique({
+      where: { id },
+    });
+
+    if (!target) throw new NotFoundException('Target not found');
+
+    const data = {}
+
+    return this.prisma.targetAssignment.update({
+      where: { id },
+      data: {
+        multiplier: dto.multiplier,
+        targetAmount: new Decimal(dto.targetAmount),
+        salesType: dto.salesType
+      },
+    });
+  }
+
+  // ADMIN — delete target
+  async deleteTarget(id: number) {
+    const target = await this.prisma.targetAssignment.findUnique({
+      where: { id },
+    });
+
+    if (!target) throw new NotFoundException('Target not found');
+
+    return this.prisma.targetAssignment.delete({
+      where: { id },
+    });
+  }
+
+  async getTargetStats() {
+    const [
+      totalTargetsGiven,
+      totalTargetsReached,
+      totalRoiGenerated,
+      roiFromCompletedTargets,
+    ] = await this.prisma.$transaction([
+      // total targets assigned
+      this.prisma.targetAssignment.count(),
+
+      // completed targets
+      this.prisma.targetAssignment.count({
+        where: { completed: true },
+      }),
+
+      // ROI generated from all target packages
+      this.prisma.packageIncomeLog.aggregate({
+        _sum: { amount: true },
+        where: {
+          purchase: {
+            isTarget: true,
+          },
+        },
+      }),
+
+      // ROI generated from completed targets only
+      this.prisma.packageIncomeLog.aggregate({
+        _sum: { amount: true },
+        where: {
+          purchase: {
+            isTarget: true,
+            targetAssignment: {
+              some: {
+                completed: true,
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      totalTargetsGiven,
+      totalTargetsReached,
+      totalRoiGenerated: totalRoiGenerated._sum.amount ?? '0',
+      roiFromCompletedTargets: roiFromCompletedTargets._sum.amount ?? '0',
+    };
+  }
+
+  async getTargetBusinessVolumeStats() {
+    const [totalTargets, lockedUsers] = await this.prisma.$transaction([
+      this.prisma.targetAssignment.aggregate({
+        _sum: {
+          targetAmount: true,
+          achieved: true,
+        },
+      }),
+
+      this.prisma.user.count({
+        where: {
+          lockWithdrawalsTillTarget: true,
+        },
+      }),
+    ]);
+
+    const totalTargetVolume = totalTargets._sum.targetAmount ?? new Decimal(0);
+
+    const totalAchievedVolume = totalTargets._sum.achieved ?? new Decimal(0);
+
+    const remainingVolume = new Decimal(totalTargetVolume).minus(
+      totalAchievedVolume,
+    );
+
+    const completionPercent = totalTargetVolume.equals(0)
+      ? 0
+      : totalAchievedVolume.div(totalTargetVolume).mul(100).toDecimalPlaces(2);
+
+    return {
+      totalTargetVolume: totalTargetVolume.toString(),
+      totalAchievedVolume: totalAchievedVolume.toString(),
+      remainingVolume: remainingVolume.toString(),
+      averageCompletionPercent: completionPercent.toString(),
+      usersUnderTargetLock: lockedUsers,
+    };
+  }
+
+  async assignTarget(userId: number, dto: AssignTargetDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { memberId: dto.memberId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // find package based on amount
+    const pkg = await this.prisma.package.findFirst({
+      where: {
+        investmentMax: {
+          gte: dto.packageAmount,
+        },
+        investmentMin: {
+          lte: dto.packageAmount,
+        },
+      }
+    });
+
+    if (!pkg) {
+      throw new BadRequestException('No matching package found');
+    }
+
+    const purchaseDto: PurchasePackageDto = {
+      packageId: pkg.id,
+      amount: dto.packageAmount,
+      userId: dto.memberId,
+      split: dto.split,
+      isTarget: true,
+      targetMultiplier: dto.targetMultiplier,
+      targetType: dto.targetType,
+      targetNeededToUnlockDailyRoi: dto.targetNeededToUnlockDailyRoi,
+    };
+
+    await this.packageService.purchasePackage(userId, Role.ADMIN, purchaseDto);
+
+    return {
+      message: 'Target assigned successfully',
+    };
+  }
+
+  // USER — list own targets
+  async listUserTargets(userId: number) {
+    return this.prisma.targetAssignment.findMany({
+      where: {
+        userId,
+      },
+      include: {
+        purchase: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+}

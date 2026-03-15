@@ -16,7 +16,7 @@ import { TreeService } from 'src/tree/tree.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { Logger } from '@nestjs/common';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
-import { response } from 'express';
+import { TargetSalesType } from '@prisma/client';
 @Injectable()
 export class PackagesService {
   private readonly log = new Logger(PackagesService.name);
@@ -85,14 +85,133 @@ export class PackagesService {
     }));
   }
 
+  async processTargetVolume(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    bv: Decimal,
+    type: TargetSalesType,
+  ) {
+    // fetch active targets for that user
+    const targets = await tx.targetAssignment.findMany({
+      where: {
+        userId,
+        completed: false,
+        salesType: type,
+      },
+    });
+
+    if (!targets.length) return;
+
+    for (const target of targets) {
+      const currentAchieved = new Decimal(target.achieved.toString());
+      const targetAmount = new Decimal(target.targetAmount.toString());
+
+      const newAchieved = currentAchieved.plus(bv);
+
+      const completed = newAchieved.greaterThanOrEqualTo(targetAmount);
+
+      await tx.targetAssignment.update({
+        where: { id: target.id },
+        data: {
+          achieved: Decimal.min(newAchieved, targetAmount).toFixed(),
+          completed,
+        },
+      });
+
+      if (completed) {
+        const remainingTargets = await tx.targetAssignment.count({
+          where: {
+            userId: target.userId,
+            completed: false,
+          },
+        });
+
+        if (remainingTargets === 0) {
+          await tx.user.update({
+            where: { id: target.userId },
+            data: {
+              lockWithdrawalsTillTarget: false,
+            },
+          });
+        }
+      }
+    }
+  }
+
+  // async addBinaryVolume(
+  //   tx: Prisma.TransactionClient,
+  //   userId: number,
+  //   bv: Decimal,
+  // ) {
+  //   let current = await tx.user.findUnique({
+  //     where: { id: userId },
+  //     select: { id: true, sponsorId: true, position: true },
+  //   });
+
+  //   while (current?.sponsorId) {
+  //     const sponsor = await tx.user.findUnique({
+  //       where: { id: current.sponsorId },
+  //       select: {
+  //         id: true,
+  //         position: true,
+  //         leftBv: true,
+  //         rightBv: true,
+  //         rankLeftVolume: true,
+  //         rankRightVolume: true,
+  //       },
+  //     });
+
+  //     if (!sponsor) break;
+
+  //     const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
+
+  //     const rankField =
+  //       current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
+
+  //     await tx.user.update({
+  //       where: { id: sponsor.id },
+  //       data: {
+  //         [field]: new Decimal(sponsor[field].toString()).plus(bv).toFixed(),
+  //         [rankField]: new Decimal(sponsor[rankField].toString())
+  //           .plus(bv)
+  //           .toFixed(),
+  //       },
+  //     });
+
+  //     await this.processTargetVolume(
+  //       tx,
+  //       sponsor.id,
+  //       bv,
+  //       TargetSalesType.INDIRECT,
+  //     );
+
+  //     await this.notificationsService.createNotification(
+  //       sponsor.id,
+  //       'Binary Volume Update',
+  //       `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume has increased by ${bv.toFixed()} BV due to a package purchase in your downline. Keep building your network!`,
+  //       false,
+  //       undefined,
+  //       undefined,
+  //       '/reports/track-referral',
+  //     );
+
+  //     // climb upward
+  //     current = await tx.user.findUnique({
+  //       where: { id: sponsor.id },
+  //       select: { id: true, sponsorId: true, position: true },
+  //     });
+  //   }
+  // }
+
   async addBinaryVolume(
     tx: Prisma.TransactionClient,
     userId: number,
     bv: Decimal,
   ) {
+    // get the buyer
     let current = await tx.user.findUnique({
       where: { id: userId },
-      select: { id: true, sponsorId: true, position: true },
+      select: { sponsorId: true, position: true },
     });
 
     while (current?.sponsorId) {
@@ -101,44 +220,44 @@ export class PackagesService {
         select: {
           id: true,
           position: true,
-          leftBv: true,
-          rightBv: true,
-          rankLeftVolume: true,
-          rankRightVolume: true,
         },
       });
 
       if (!sponsor) break;
 
       const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
-
       const rankField =
         current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
 
       await tx.user.update({
         where: { id: sponsor.id },
         data: {
-          [field]: new Decimal(sponsor[field].toString()).plus(bv).toFixed(),
-          [rankField]: new Decimal(sponsor[rankField].toString())
-            .plus(bv)
-            .toFixed(),
+          [field]: { increment: bv.toNumber() },
+          [rankField]: { increment: bv.toNumber() },
         },
       });
+
+      // trigger target engine
+      await this.processTargetVolume(
+        tx,
+        sponsor.id,
+        bv,
+        TargetSalesType.INDIRECT,
+      );
 
       await this.notificationsService.createNotification(
         sponsor.id,
         'Binary Volume Update',
-        `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume has increased by ${bv.toFixed()} BV due to a package purchase in your downline. Keep building your network!`,
+        `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume increased by ${bv.toFixed()}.`,
         false,
         undefined,
         undefined,
         '/reports/track-referral',
       );
 
-      // climb upward
       current = await tx.user.findUnique({
         where: { id: sponsor.id },
-        select: { id: true, sponsorId: true, position: true },
+        select: { sponsorId: true, position: true },
       });
     }
   }
@@ -307,7 +426,7 @@ export class PackagesService {
         });
       }
 
-      await tx.packagePurchase.create({
+      const purchase = await tx.packagePurchase.create({
         data: {
           userId: user.id,
           buyerId,
@@ -317,13 +436,54 @@ export class PackagesService {
           endDate,
           status: 'ACTIVE',
           splitConfig: dto.split,
+          isTarget: dto.isTarget ?? false,
         },
       });
 
+      if (user.sponsorId) {
+        await this.processTargetVolume(
+          tx,
+          user.sponsorId,
+          amt,
+          TargetSalesType.DIRECT,
+        );
+      }
+
+      if (dto.isTarget) {
+        if (!dto.targetMultiplier || !dto.targetType) {
+          throw new BadRequestException('Target multiplier and type required');
+        }
+
+        const multiplierMap = {
+          X1: 1,
+          X2: 2,
+          X3: 3,
+          X4: 4,
+          X5: 5,
+          X7: 7,
+          X10: 10,
+        };
+
+        const multiplierValue = multiplierMap[dto.targetMultiplier];
+
+        const targetAmount = amt.mul(multiplierValue);
+
+        await tx.targetAssignment.create({
+          data: {
+            userId: user.id,
+            purchaseId: purchase.id,
+            packageAmount: amt.toFixed(),
+            multiplier: dto.targetMultiplier,
+            salesType: dto.targetType,
+            targetAmount: targetAmount.toFixed(),
+          },
+        });
+      }
       await tx.user.update({
         where: { id: user.id },
         data: {
           activePackageCount: { increment: 1 },
+          lockWithdrawalsTillTarget: dto.isTarget || false,
         },
       });
 
@@ -357,25 +517,25 @@ export class PackagesService {
               purpose: `Referral bonus from ${user.memberId}`,
               meta: { fromUserId: user.id, fromMemberId: user.memberId },
             });
+
+            const html = EmailTemplates.referralIncome(
+              sponsor.firstName + ' ' + sponsor.lastName,
+              bonusAmt.toFixed(),
+              user.firstName + ' ' + user.lastName,
+              response?.balanceAfter,
+            );
+
+            await this.notificationsService.createNotificationTransaction(
+              tx,
+              user.sponsorId,
+              'Referral Bonus Earned',
+              `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
+              true,
+              html,
+              'New Referral Earnings Credited!',
+              '/income/referral',
+            );
           }
-
-          const html = EmailTemplates.referralIncome(
-            sponsor.firstName + ' ' + sponsor.lastName,
-            bonusAmt.toFixed(),
-            user.firstName + ' ' + user.lastName,
-            response?.balanceAfter,
-          );
-
-          await this.notificationsService.createNotificationTransaction(
-            tx,
-            user.sponsorId,
-            'Referral Bonus Earned',
-            `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
-            true,
-            html,
-            'New Referral Earnings Credited!',
-            '/income/referral',
-          );
         }
       }
 

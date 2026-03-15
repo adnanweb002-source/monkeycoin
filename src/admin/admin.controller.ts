@@ -21,6 +21,8 @@ import { WalletService } from 'src/wallets/wallet.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { CreateRankDto } from './dto/create-rank.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateDepositBonusDto } from './dto/create-deposit-bonus.dto';
+import { UpdateDepositBonusDto } from './dto/update-deposit-bonus.dto';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -171,5 +173,36 @@ export class AdminController {
   @Get('/stats')
   getStats() {
     return this.adminService.getStats();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('deposit-bonus')
+  createDepositBonus(@Body() dto: CreateDepositBonusDto) {
+    return this.adminService.createDepositBonus(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('deposit-bonus')
+  listDepositBonuses() {
+    return this.adminService.listDepositBonuses();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch('deposit-bonus/:id')
+  updateDepositBonus(
+    @Param('id') id: number,
+    @Body() dto: UpdateDepositBonusDto,
+  ) {
+    return this.adminService.updateDepositBonus(id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete('deposit-bonus/:id')
+  deleteDepositBonus(@Param('id') id: number) {
+    return this.adminService.deleteDepositBonus(id);
   }
 }

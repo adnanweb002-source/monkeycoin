@@ -10,6 +10,7 @@ import { UtilityModule } from './utility/utility.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MetricsModule } from './metrics/metrics.module';
 import { RankModule } from './rankandrewards/ranks.module';
+import { TargetsModule } from './targets/targets.module';
 @Module({
   imports: [
     AuthModule,
@@ -20,6 +21,7 @@ import { RankModule } from './rankandrewards/ranks.module';
     UtilityModule,
     MetricsModule,
     RankModule,
+    TargetsModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],

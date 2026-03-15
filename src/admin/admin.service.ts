@@ -11,7 +11,8 @@ import { AuthService } from 'src/auth/auth.service';
 import { TwoFactorService } from 'src/auth/twofactor.service';
 import { CreateRankDto } from './dto/create-rank.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-
+import { CreateDepositBonusDto } from './dto/create-deposit-bonus.dto';
+import { UpdateDepositBonusDto } from './dto/update-deposit-bonus.dto';
 @Injectable()
 export class AdminUsersService {
   constructor(
@@ -547,5 +548,103 @@ export class AdminUsersService {
       ok: true,
       user,
     };
+  }
+
+  async createDepositBonus(dto: CreateDepositBonusDto) {
+    const start = new Date(dto.startDate);
+    const end = new Date(dto.endDate);
+
+    if (start >= end) {
+      throw new BadRequestException('startDate must be before endDate');
+    }
+
+    const overlapping = await this.prisma.depositBonus.findFirst({
+      where: {
+        startDate: { lte: end },
+        endDate: { gte: start },
+      },
+    });
+
+    if (overlapping) {
+      throw new BadRequestException(
+        'A deposit bonus already exists for this date range',
+      );
+    }
+
+    const bonus = await this.prisma.depositBonus.create({
+      data: {
+        bonusPercentage: dto.bonusPercentage,
+        startDate: start,
+        endDate: end,
+      },
+    });
+
+    return { ok: true, bonus };
+  }
+
+  async listDepositBonuses() {
+    return this.prisma.depositBonus.findMany({
+      orderBy: {
+        startDate: 'desc',
+      },
+    });
+  }
+
+  async updateDepositBonus(id: number, dto: UpdateDepositBonusDto) {
+    const bonus = await this.prisma.depositBonus.findUnique({
+      where: { id },
+    });
+
+    if (!bonus) {
+      throw new NotFoundException('Deposit bonus not found');
+    }
+
+    const start = dto.startDate ? new Date(dto.startDate) : bonus.startDate;
+    const end = dto.endDate ? new Date(dto.endDate) : bonus.endDate;
+
+    if (start >= end) {
+      throw new BadRequestException('startDate must be before endDate');
+    }
+
+    const overlapping = await this.prisma.depositBonus.findFirst({
+      where: {
+        id: { not: id },
+        startDate: { lte: end },
+        endDate: { gte: start },
+      },
+    });
+
+    if (overlapping) {
+      throw new BadRequestException(
+        'Another bonus exists within this date range',
+      );
+    }
+
+    const updated = await this.prisma.depositBonus.update({
+      where: { id },
+      data: {
+        bonusPercentage: dto.bonusPercentage,
+        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+      },
+    });
+
+    return { ok: true, bonus: updated };
+  }
+
+  async deleteDepositBonus(id: number) {
+    const bonus = await this.prisma.depositBonus.findUnique({
+      where: { id },
+    });
+
+    if (!bonus) {
+      throw new NotFoundException('Deposit bonus not found');
+    }
+
+    await this.prisma.depositBonus.delete({
+      where: { id },
+    });
+
+    return { ok: true };
   }
 }

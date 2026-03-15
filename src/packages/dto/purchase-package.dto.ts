@@ -1,4 +1,13 @@
-import { IsDecimal, IsInt, IsOptional } from 'class-validator';
+import {
+  IsDecimal,
+  IsInt,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  IsString,
+  IsObject,
+} from 'class-validator';
+import { TargetMultiplier, TargetSalesType } from '@prisma/client';
 
 export class PurchasePackageDto {
   @IsInt()
@@ -8,10 +17,28 @@ export class PurchasePackageDto {
   amount: string;
 
   @IsOptional()
-  userId?: string;
+  @IsString()
+  userId?: string; // memberId of target user
 
   // percentage split by wallet
-  split: Record<string, number>; 
+  @IsObject()
+  split: Record<string, number>;
   // example:
   // { F_WALLET: 40, M_WALLET: 60 }
+
+  @IsOptional()
+  @IsBoolean()
+  isTarget?: boolean;
+
+  @IsOptional()
+  @IsEnum(TargetMultiplier)
+  targetMultiplier?: TargetMultiplier;
+
+  @IsOptional()
+  @IsEnum(TargetSalesType)
+  targetType?: TargetSalesType;
+
+  @IsOptional()
+  @IsDecimal()
+  targetNeededToUnlockDailyRoi?: string;
 }

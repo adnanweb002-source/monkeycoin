@@ -755,6 +755,12 @@ export class WalletService {
       );
     }
 
+    if(user.lockWithdrawalsTillTarget){
+      throw new ForbiddenException(
+        'Please reach your target to place withdrawal requests',
+      );
+    }
+
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
@@ -1221,7 +1227,7 @@ export class WalletService {
       userId: params.userId,
       walletType: WalletType.BONUS_WALLET,
       amount: params.amount,
-      txType: TransactionType.RANK_REWARD,
+      txType: TransactionType.ADMIN_BONUS,
       purpose: params.reason ?? 'Admin bonus credit',
       meta: {
         creditedBy: params.adminId,

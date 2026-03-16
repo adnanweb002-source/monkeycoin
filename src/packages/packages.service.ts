@@ -91,6 +91,7 @@ export class PackagesService {
     bv: Decimal,
     type: TargetSalesType,
   ) {
+    return
     // fetch active targets for that user
     const targets = await tx.targetAssignment.findMany({
       where: {

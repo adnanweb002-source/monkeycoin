@@ -91,7 +91,7 @@ export class PackagesService {
     bv: Decimal,
     type: TargetSalesType,
   ) {
-    return
+    return;
     // fetch active targets for that user
     const targets = await tx.targetAssignment.findMany({
       where: {
@@ -368,14 +368,23 @@ export class PackagesService {
 
     return this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
+      let purpose = '';
+      if (buyerId! == user.id) {
+        purpose = `${user.memberId} - Package purchase ${pkg.name}`;
+      }
       for (const p of parts) {
         await this.walletService.debitWalletTransaction(tx, {
           userId: buyerId,
           walletType: p.wallet,
           amount: p.amount,
           txType: TransactionType.PACKAGE_PURCHASE,
-          purpose: `Package purchase: ${pkg.name} (${p.wallet})`,
-          meta: { packageId: pkg.id, split: dto.split },
+          purpose: purpose,
+          meta: {
+            packageName: pkg.name,
+            purchasedFor: user.memberId,
+            purchasedBy: buyer.memberId,
+            split: dto.split,
+          },
         });
       }
 
@@ -516,7 +525,7 @@ export class PackagesService {
               amount: bonusAmt.toString(),
               txType: TransactionType.REFERRAL_INCOME,
               purpose: `Referral bonus from ${user.memberId}`,
-              meta: { fromUserId: user.id, fromMemberId: user.memberId },
+              meta: { fromMemberId: user.memberId },
             });
 
             const html = EmailTemplates.referralIncome(

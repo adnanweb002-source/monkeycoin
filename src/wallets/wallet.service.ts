@@ -1250,6 +1250,9 @@ export class WalletService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
+        include: {
+          user: {},
+        },
       });
 
       return transactions;
@@ -1271,6 +1274,7 @@ export class WalletService {
           balanceAfter: true,
           createdAt: true,
           meta: true,
+          user: true,
         },
         skip,
         take,

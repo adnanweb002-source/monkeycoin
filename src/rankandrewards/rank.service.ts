@@ -15,7 +15,6 @@ export class RankService {
    * Return all ranks with claim status for user
    */
   async getUserRanks(userId: number) {
-
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -37,13 +36,11 @@ export class RankService {
     const right = new Decimal(user.rankRightVolume.toString());
 
     return ranks.map((rank) => {
-
       const unlocked =
         left.greaterThanOrEqualTo(rank.requiredLeft) &&
         right.greaterThanOrEqualTo(rank.requiredRight);
 
-      const claimable =
-        unlocked && rank.order === user.currentRank + 1;
+      const claimable = unlocked && rank.order === user.currentRank + 1;
 
       return {
         id: rank.id,
@@ -63,9 +60,7 @@ export class RankService {
    * Claim rank reward
    */
   async claimRank(userId: number, rankId: number) {
-
     return this.prisma.$transaction(async (tx) => {
-
       const user = await tx.user.findUnique({
         where: { id: userId },
       });
@@ -122,6 +117,7 @@ export class RankService {
           amount: rank.rewardAmount.toString(),
           txType: TransactionType.RANK_REWARD,
           purpose: `Rank Reward: ${rank.name}`,
+          meta: { rankName: rank.name },
         });
       }
 
@@ -160,7 +156,6 @@ export class RankService {
    * Get rank progress for dashboard
    */
   async getRankProgress(userId: number) {
-
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -199,5 +194,5 @@ export class RankService {
     return this.prisma.rank.findMany({
       orderBy: { order: 'asc' },
     });
-  } 
+  }
 }

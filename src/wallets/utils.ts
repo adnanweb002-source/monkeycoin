@@ -1,7 +1,9 @@
-// utils/tx.ts
+import { randomBytes } from "crypto";
+
 export function generateTxNumber(): string {
   // timestamp + random + small salt to avoid sequential look
-  const t = Date.now().toString(36);
-  const r = Math.floor(Math.random() * 1e6).toString(36);
-  return `TX-${t}-${r}`;
+  const id =
+  Date.now().toString(36).slice(-4) +
+  randomBytes(2).toString("hex");
+  return `TX-${id}`;
 }

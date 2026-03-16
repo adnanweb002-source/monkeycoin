@@ -112,7 +112,7 @@ export class PackagesCronService {
             amount: amount.toFixed(),
             txType: TransactionType.ROI_CREDIT,
             purpose: `Daily return for package ${p.package.name}`,
-            meta: { purchaseId: p.id, date: creditDate },
+            meta: { date: creditDate, packageName: p.package.name },
           });
 
           await this.notificationsService.createNotification(

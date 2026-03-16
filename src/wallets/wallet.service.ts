@@ -16,6 +16,7 @@ import { NowPaymentsService } from './deposit-gateway.service';
 import { CreateCryptoDepositDto } from './dto/deposit.dto';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
+import { SETTING_TYPE } from '@prisma/client';
 @Injectable()
 export class WalletService {
   constructor(
@@ -522,12 +523,18 @@ export class WalletService {
     });
     if (!sender) throw new NotFoundException('Sender not found');
 
-    const transferMode = 'DOWNLINE_ONLY';
+    const transferSetting = await this.prisma.adminSetting.findUnique({
+      where: {key: SETTING_TYPE.TRANSFER_TYPE}
+    })
 
-    if (transferMode === 'DOWNLINE_ONLY') {
+    const mode = transferSetting?.value || "DOWNLINE"
+
+
+    if (mode === 'DOWNLINE') {
       const isDownline = await this.isInDownline(fromUserId, recipient.id);
-      if (!isDownline)
-        throw new ForbiddenException('Recipient not in your downline');
+      const isUpline = sender.sponsorId == recipient.id
+      if (!isDownline && !isUpline)
+        throw new ForbiddenException('Recipient is neither in your downline nor upline');
     }
 
     // Atomic debit + credit

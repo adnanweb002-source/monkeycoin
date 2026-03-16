@@ -387,12 +387,6 @@ export class PackagesService {
           },
         });
       }
-
-      // 🔹 BV = full package amount (adjust if business logic changes)
-      const bv = amt;
-
-      await this.addBinaryVolume(tx, user.id, bv);
-
       // next-day start + duration
       const startDate = new Date();
       startDate.setDate(startDate.getDate() + 1);
@@ -449,6 +443,13 @@ export class PackagesService {
           isTarget: dto.isTarget ?? false,
         },
       });
+
+       // 🔹 BV = full package amount (adjust if business logic changes)
+      const bv = amt;
+
+      await this.addBinaryVolume(tx, user.id, bv);
+
+
 
       if (user.sponsorId) {
         await this.processTargetVolume(
@@ -540,6 +541,59 @@ export class PackagesService {
               user.sponsorId,
               'Referral Bonus Earned',
               `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
+              true,
+              html,
+              'New Referral Earnings Credited!',
+              '/income/referral',
+            );
+          }
+        }
+      } 
+
+      if (buyerId !== user.id){
+        if (buyer?.sponsorId) {
+          const sponsor = await this.prisma.user.findUnique({
+            where: { id: buyer.sponsorId },
+          });
+
+          if (!sponsor) {
+            throw new NotFoundException('Sponsor not found');
+          }
+
+          const bonus = await this.prisma.adminSetting.findUnique({
+            where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
+          });
+
+          const bonusRate = this.parseRate(bonus?.value);
+
+          const bonusAmt = amt.mul(bonusRate);
+
+          let response: any = null;
+
+          if (bonusAmt.gt(0)) {
+            response = await this.walletService.creditWalletTransaction(tx, {
+              userId: buyer.sponsorId,
+              walletType: WalletType.I_WALLET,
+              amount: bonusAmt.toString(),
+              txType: TransactionType.REFERRAL_INCOME,
+              purpose: `Referral bonus from ${buyer.memberId}`,
+              meta: { fromMemberId: buyer.memberId },
+            });
+
+            await this.addBinaryVolume(tx, buyer.id, bv);
+
+            const html = EmailTemplates.referralIncome(
+              sponsor.firstName + ' ' + sponsor.lastName,
+              bonusAmt.toFixed(),
+              buyer.firstName + ' ' + buyer.lastName,
+              response?.balanceAfter,
+            );
+
+            await this.notificationsService.createNotificationTransaction(
+              tx,
+              buyer.sponsorId,
+              'Referral Bonus Earned',
+              `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${buyer.firstName} ${buyer.lastName}'s package purchase.`,
               true,
               html,
               'New Referral Earnings Credited!',

@@ -20,6 +20,7 @@ type DbRow = {
   created_at: Date;
   active_package_count: number | null;
   avatar_id: string;
+  current_rank: string;
 };
 
 @Injectable()
@@ -62,6 +63,7 @@ export class TreeService {
         u.created_at,
         u."activePackageCount" as active_package_count,
         u.avatar_id,
+        u."currentRank",
         1 AS lvl
       FROM "users" u
       LEFT JOIN "users" p ON p.id = u.parent_id
@@ -88,6 +90,7 @@ export class TreeService {
         u.created_at,
         u."activePackageCount" as active_package_count,
         u.avatar_id,
+        u."currentRank",
         sTree.lvl + 1
       FROM "users" u
       JOIN subtree sTree ON u.parent_id = sTree.id
@@ -125,6 +128,8 @@ export class TreeService {
         active_package_count: r.active_package_count,
 
         avatar_id: r.avatar_id,
+
+        currentRank: r.current_rank,
 
         left: null,
         right: null,
@@ -165,6 +170,9 @@ export class TreeService {
         rightChild: n.right ? convertNode(n.right) : null,
 
         avatarId: n.avatar_id,
+
+        createdAt: n.createdAt,
+        currentRank: n.currentRank,
       };
     };
 

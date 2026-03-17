@@ -1318,6 +1318,9 @@ export class WalletService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
+         include: {
+          wallet: {},
+        },
       });
       return requests;
     }

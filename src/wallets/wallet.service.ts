@@ -603,7 +603,7 @@ export class WalletService {
           purpose: `Transfer from ${fromUserId}`,
           balanceAfter: newToBalance.toFixed(),
           txNumber: txNoIn,
-          meta: JSON.stringify({ fromUserId }),
+          meta:{ from: sender.memberId, to: recipient.memberId },
         },
       });
 
@@ -1254,7 +1254,9 @@ export class WalletService {
   ) {
     if (userRole !== Role.ADMIN) {
       const wallet = await this.getWallet(userId, walletType);
-
+      if(!wallet){
+        throw new BadRequestException("Wallet not found")
+      }
       const transactions = await this.prisma.walletTransaction.findMany({
         where: { walletId: wallet.id },
         orderBy: { createdAt: 'desc' },
@@ -1267,10 +1269,12 @@ export class WalletService {
 
       return transactions;
     } else {
+      const wallet = await this.getWallet(userId, walletType);
+      if (!wallet){
+         throw new BadRequestException("Wallet not found")
+      }
       const transactions = await this.prisma.walletTransaction.findMany({
-        where: {
-          wallet: { type: walletType },
-        },
+        where: { walletId: wallet.id },
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,

@@ -568,7 +568,10 @@ export class WalletService {
           purpose: `Transfer to ${recipient.memberId}`,
           balanceAfter: newFromBalance.toFixed(),
           txNumber: txNoOut,
-          meta: JSON.stringify({ toMemberId }),
+          meta: {
+            from: sender.memberId,
+            to: recipient.memberId
+          },
         },
       });
 

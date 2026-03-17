@@ -7,7 +7,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { Logger } from '@nestjs/common/services/logger.service';
 import { NotificationsService } from 'src/notifications/notifcations.service';
-import {SETTING_TYPE} from '@prisma/client';
+import { SETTING_TYPE } from '@prisma/client';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 
 @Injectable()
@@ -23,27 +23,6 @@ export class BinaryEngineService {
   }
 
   async registerClosingCron() {
-
-    const today = new Date();
-
-    // Skip Sat/Sun
-    const day = today.getDay();
-    if (day === 0 || day === 6) {
-      this.log.debug('Weekend — skipping binary payout run');
-      return;
-    }
-
-    // Skip holidays
-    const holiday = await this.prisma.holiday.findFirst({
-      where: { date: today },
-    });
-    if (holiday) {
-      this.log.debug(
-        `Holiday (${holiday.title}) — skipping binary payout run`,
-      );
-      return;
-    }
-
     const setting = await this.prisma.adminSetting.findUnique({
       where: { key: 'BACK_OFFICE_CLOSING_TIME' },
     });
@@ -59,7 +38,7 @@ export class BinaryEngineService {
 
     const job = new CronJob(cronExpr, async () => {
       await this.runDailyBinaryPayout();
-    });
+    }, null, false, "America/Toronto");
 
     this.scheduler.addCronJob('binary-closing-job', job);
     job.start();
@@ -70,6 +49,24 @@ export class BinaryEngineService {
   async runDailyBinaryPayout(runDate?: Date) {
     // Determine credit day based on closing time
     const creditDate = await this.resolveCreditDate(runDate);
+
+    const today = new Date();
+
+    // Skip holidays
+    const holiday = await this.prisma.holiday.findFirst({
+      where: { date: today },
+    });
+    if (holiday) {
+      this.log.debug(`Holiday (${holiday.title}) — skipping binary payout run`);
+      return;
+    }
+
+    // Skip Sat/Sun
+    const day = today.getDay();
+    if (day === 0 || day === 6) {
+      this.log.debug('Weekend — skipping binary payout run');
+      return;
+    }
 
     console.log('Running Binary Payout for', creditDate.toDateString());
 
@@ -105,7 +102,6 @@ export class BinaryEngineService {
 
     return new Decimal(raw);
   }
-
 
   /** -------- Read binary % from AdminSetting -------- */
   private async getBinaryRate(): Promise<Decimal> {
@@ -147,7 +143,13 @@ export class BinaryEngineService {
 
   /** -------- Core binary processing per user -------- */
   private async processUserBinary(
-    user: { id: number; leftBv: any; rightBv: any; firstName: string; lastName: string },
+    user: {
+      id: number;
+      leftBv: any;
+      rightBv: any;
+      firstName: string;
+      lastName: string;
+    },
     rate: Decimal,
     creditDate: Date,
   ) {
@@ -196,8 +198,7 @@ export class BinaryEngineService {
         left.toFixed(),
         right.toFixed(),
         Decimal.max(left.minus(weak), right.minus(weak)).toFixed(),
-
-      )
+      );
       await this.notificationsService.createNotification(
         user.id,
         'Binary Income Credited',

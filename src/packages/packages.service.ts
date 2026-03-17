@@ -366,7 +366,7 @@ export class PackagesService {
     // compute wallet deductions
     const parts = this.validateSplitConfig(buyerRole, dto.split, amt, rules);
 
-    return this.prisma.$transaction(async (tx) => {
+    const purchase = this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
       let purpose = '';
       if (buyerId! == user.id) {
@@ -448,7 +448,6 @@ export class PackagesService {
       const bv = amt;
 
       await this.addBinaryVolume(tx, user.id, bv);
-
 
 
       if (user.sponsorId) {
@@ -664,6 +663,19 @@ export class PackagesService {
         );
       }
     });
+
+    return {
+      "message": "Package purchased successfully",
+      "data": {
+        "purchasedBy": buyer.memberId,
+        "purchasedFor": user.memberId,
+        "dailyRoI": pkg.dailyReturnPct,
+        "totalRoI": (pkg.durationDays * Number(pkg.dailyReturnPct) / 100) * Number(dto.amount),
+        "totalDays": pkg.durationDays,
+        
+      }
+    }
+
   }
 
   // -------- USER: MY PACKAGES --------

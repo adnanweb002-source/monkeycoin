@@ -38,7 +38,7 @@ export class PackagesCronService {
 
     const job = new CronJob(cronExpr, async () => {
       await this.runDailyReturns();
-    });
+    }, null, false, "America/Toronto");
 
     this.scheduler.addCronJob('daily-package-returns-job', job);
     job.start();

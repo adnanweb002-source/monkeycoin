@@ -21,6 +21,7 @@ type DbRow = {
   active_package_count: number | null;
   avatar_id: string;
   current_rank: string;
+  total_package_amount: Decimal;
 };
 
 @Injectable()
@@ -44,62 +45,79 @@ export class TreeService {
     // Use a parameterized raw query with WITH RECURSIVE.
     // We also compute level to enforce depth on the server side.
     const rows = await this.prisma.$queryRaw<DbRow[]>`
-    WITH RECURSIVE subtree AS (
-      SELECT 
-        u.id,
-        u.first_name,
-        u.last_name,
-        u.left_bv,
-        u.right_bv,
-        u.phone_number,
-        u.member_id,
-        u.email,
-        u.parent_id,
-        u.sponsor_id,
-        p.member_id AS parent_member_id,
-        s.member_id AS sponsor_member_id,
-        u.position,
-        u.status,
-        u.created_at,
-        u."activePackageCount" as active_package_count,
-        u.avatar_id,
-        u."currentRank",
-        1 AS lvl
-      FROM "users" u
-      LEFT JOIN "users" p ON p.id = u.parent_id
-      LEFT JOIN "users" s ON s.id = u.sponsor_id
-      WHERE u.id = ${userId}
+WITH RECURSIVE subtree AS (
+  -- ❌ NO aggregates here
+  SELECT 
+    u.id,
+    u.first_name,
+    u.last_name,
+    u.left_bv,
+    u.right_bv,
+    u.phone_number,
+    u.member_id,
+    u.email,
+    u.parent_id,
+    u.sponsor_id,
+    p.member_id AS parent_member_id,
+    s.member_id AS sponsor_member_id,
+    u.position,
+    u.status,
+    u.created_at,
+    u."activePackageCount" as active_package_count,
+    u.avatar_id,
+    u."currentRank",
+    1 AS lvl
+  FROM "users" u
+  LEFT JOIN "users" p ON p.id = u.parent_id
+  LEFT JOIN "users" s ON s.id = u.sponsor_id
+  WHERE u.id = ${userId}
 
-      UNION ALL
+  UNION ALL
 
-      SELECT 
-        u.id,
-        u.first_name,
-        u.last_name,
-        u.left_bv,
-        u.right_bv,
-        u.phone_number,
-        u.member_id,
-        u.email,
-        u.parent_id,
-        u.sponsor_id,
-        p.member_id AS parent_member_id,
-        s.member_id AS sponsor_member_id,
-        u.position,
-        u.status,
-        u.created_at,
-        u."activePackageCount" as active_package_count,
-        u.avatar_id,
-        u."currentRank",
-        sTree.lvl + 1
-      FROM "users" u
-      JOIN subtree sTree ON u.parent_id = sTree.id
-      LEFT JOIN "users" p ON p.id = u.parent_id
-      LEFT JOIN "users" s ON s.id = u.sponsor_id
-      WHERE sTree.lvl + 1 <= ${depth}
-    )
-    SELECT * FROM subtree;
-  `;
+  SELECT 
+    u.id,
+    u.first_name,
+    u.last_name,
+    u.left_bv,
+    u.right_bv,
+    u.phone_number,
+    u.member_id,
+    u.email,
+    u.parent_id,
+    u.sponsor_id,
+    p.member_id AS parent_member_id,
+    s.member_id AS sponsor_member_id,
+    u.position,
+    u.status,
+    u.created_at,
+    u."activePackageCount" as active_package_count,
+    u.avatar_id,
+    u."currentRank",
+    sTree.lvl + 1
+  FROM "users" u
+  JOIN subtree sTree ON u.parent_id = sTree.id
+  LEFT JOIN "users" p ON p.id = u.parent_id
+  LEFT JOIN "users" s ON s.id = u.sponsor_id
+  WHERE sTree.lvl + 1 <= ${depth}
+),
+
+-- ✅ Aggregate OUTSIDE recursion
+package_totals AS (
+  SELECT 
+    "userId",
+    COALESCE(SUM(amount), 0) as total_package_amount
+  FROM "package_purchases"
+  WHERE status = 'ACTIVE'
+  GROUP BY "userId"
+)
+
+-- ✅ Final join
+SELECT 
+  s.*,
+  COALESCE(pt.total_package_amount, 0) as total_package_amount
+FROM subtree s
+LEFT JOIN package_totals pt ON pt."userId" = s.id;
+`;
 
     if (!rows?.length) return null;
 
@@ -130,6 +148,8 @@ export class TreeService {
         avatar_id: r.avatar_id,
 
         currentRank: r.current_rank,
+
+        totalPackageAmount: r.total_package_amount,
 
         left: null,
         right: null,
@@ -173,6 +193,7 @@ export class TreeService {
 
         createdAt: n.createdAt,
         currentRank: n.currentRank,
+        totalPackageAmount: n.totalPackageAmount,
       };
     };
 

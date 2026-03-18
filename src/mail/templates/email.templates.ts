@@ -15,7 +15,7 @@ baseEmailTemplate(
 
 `Hi <b>${name}</b>,<br><br>
 
-Congratulations! Your Vaultire Infinite account has been successfully created. You are now part of a global digital banking and crypto community.
+Congratulations! Your Vaultire Infinite account has been successfully created. You are now part of a global digital banking and crypto community. <br>
 
 <b>Account Details</b><br>
 Username: ${username}<br>
@@ -46,7 +46,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-We received a request to reset your password. Click below to create a new secure password.
+We received a request to reset your password. Click below to create a new secure password. <br>
 
 <br><br>
 Note: This link expires in <b>30 minutes</b>. If you did not request this, ignore this email or contact our support.`,
@@ -70,7 +70,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-Your password has been changed successfully.
+Your password has been changed successfully. <br>
 
 <b>Activity Details:</b><br>
 Date/Time: ${date}<br>
@@ -97,7 +97,7 @@ baseEmailTemplate(
 
 `Dear ${name},<br><br>
 
-Your request to reset Google 2FA (G2FA) is under manual review. Our security team will verify your identity within ${timeframe}.`,
+Your request to reset Google 2FA (G2FA) is under manual review. Our security team will verify your identity within ${timeframe}. <br>`, 
 
 undefined,
 undefined,
@@ -116,7 +116,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-You are making changes to your Google 2FA settings. Use the code below to confirm:
+You are making changes to your Google 2FA settings. Use the code below to confirm: <br>
 
 <b>Verification Code:</b> ${code}
 
@@ -141,7 +141,7 @@ baseEmailTemplate(
 
 `Hello ${name},<br><br>
 
-Good news! Google 2FA is now enabled for your login. Your account has an added layer of protection.
+Good news! Google 2FA is now enabled for your login. Your account has an added layer of protection. <br>
 
 <b>Details:</b><br>
 Timestamp: ${date}<br>
@@ -163,7 +163,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-Google 2FA has been disabled for your account. If you did not authorize this, log in and re-enable G2FA or freeze your account immediately.`,
+Google 2FA has been disabled for your account. If you did not authorize this, log in and re-enable G2FA or freeze your account immediately. <br>`,
 
 undefined,
 undefined,
@@ -176,16 +176,20 @@ undefined,
 profileUpdated: (
 name:string,
 date:string,
-ip:string
+ip:string,
+oldDetails: string,
+newDetails: string
 ) =>
 baseEmailTemplate(
 "Your Profile Has Been Updated",
 
 `Hello ${name},<br><br>
 
-Your profile information (Name, Email, Phone, Avatar) was updated.
+Your profile information was updated. <br>
 
 <b>Details:</b><br>
+Old Details: <br> ${oldDetails} <br> <br>
+New Details: <br> ${newDetails} <br> <br>
 Change Date: ${date}<br>
 IP Address: ${ip}
 
@@ -209,7 +213,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-Your withdrawal wallet address has been updated:
+Your withdrawal wallet address has been updated: <br>
 
 <b>New Address:</b> ${address}
 
@@ -236,7 +240,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-Your deposit has been confirmed and credited to your Vaultire Infinite Deposit Wallet.
+Your deposit has been confirmed and credited to your Vaultire Infinite Deposit Wallet. <br>
 
 <b>Deposit Details:</b><br>
 Amount: ${amount} ${currency}<br>
@@ -265,7 +269,7 @@ baseEmailTemplate(
 
 `Congratulations ${name},<br><br>
 
-Your ${packageName} purchase has been processed.
+Your ${packageName} purchase has been processed. <br>
 
 <b>Summary:</b><br>
 Package: ${packageName}<br>
@@ -296,7 +300,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-A ${packageName} has been assigned to your account by ${sender}.
+A ${packageName} has been assigned to your account by ${sender}. <br>
 
 Amount: ${amount}`,
 
@@ -321,7 +325,7 @@ baseEmailTemplate(
 
 `Hello ${name},<br><br>
 
-You successfully purchased ${packageName} for ${recipient}.
+You successfully purchased ${packageName} for ${recipient} <br>.
 
 <b>Details:</b><br>
 Recipient: ${recipient}<br>
@@ -351,7 +355,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-You sent funds from your wallet successfully.
+You sent funds from your wallet successfully. <br>
 
 <b>Details:</b><br>
 Recipient: ${recipient}<br>
@@ -379,7 +383,7 @@ baseEmailTemplate(
 
 `Hello ${name},<br><br>
 
-You have received a transfer in your Vaultire Infinite wallet.
+You have received a transfer in your Vaultire Infinite wallet. <br>
 
 <b>Details:</b><br>
 From: ${sender}<br>
@@ -405,7 +409,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-You earned ${amount} from your direct partner ${partner}.
+You earned ${amount} from your direct partner ${partner}. <br>
 
 Affiliate Wallet Balance: ${balance}`,
 
@@ -429,13 +433,13 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-Your team-building efforts have earned you:
+Your team-building efforts have earned you: <br>
 
-Binary Earnings: ${amount}
+Binary Earnings: ${amount} <br>
 
 Matching Volume:<br>
 Left: ${left} PV<br>
-Right: ${right} PV
+Right: ${right} PV <br>
 
 Affiliate Wallet Balance: ${balance}`,
 
@@ -456,7 +460,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-A Repurchase Bonus of ${amount} has been credited to your Reward Wallet due to recent purchases via Affiliate and Profit Wallets.`,
+A Repurchase Bonus of ${amount} has been credited to your Reward Wallet due to recent purchases via Affiliate and Profit Wallets. <br>` ,
 
 undefined,
 undefined,
@@ -472,11 +476,11 @@ rank:string,
 reward:string
 ) =>
 baseEmailTemplate(
-`Congratulations! New Rank Achieved: ${rank} 🏆`,
+`Congratulations! New Rank Achieved: ${rank} 🏆 <br>`,
 
 `Hi ${name},<br><br>
 
-Your dedication earned you the rank ${rank}.
+Your dedication earned you the rank ${rank} <br>.
 
 Reward: ${reward}`,
 
@@ -499,7 +503,7 @@ baseEmailTemplate(
 
 `Hello ${name},<br><br>
 
-Your investment in ${packageName} has matured. Initial capital returned to your wallet.
+Your investment in ${packageName} has matured. Initial capital returned to your wallet <br>.
 
 Amount Returned: ${amount}<br>
 Date: ${date}`,
@@ -522,7 +526,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-Your Reward on Capital (ROC) has been credited for the recent period.
+Your Reward on Capital (ROC) has been credited for the recent period <br>.
 
 Reward Amount: ${amount}<br>
 Wallet Balance: ${balance}`,
@@ -546,7 +550,7 @@ baseEmailTemplate(
 
 `Hi ${name},<br><br>
 
-A withdrawal request has been initiated from your account.
+A withdrawal request has been initiated from your account <br>.
 
 Amount: ${amount} (${wallet})<br>
 Destination: ${address}<br>
@@ -573,11 +577,11 @@ baseEmailTemplate(
 
 `Hello ${name},<br><br>
 
-Your withdrawal has been processed and sent to the blockchain.
+Your withdrawal has been processed and sent to the blockchain <br>.
 
 Amount: ${amount}<br>
 Wallet: ${wallet}<br>
-Status: Processed
+Status: Processed <br>
 
 Note: Blockchain confirmations may take time depending on network congestion.`,
 
@@ -599,8 +603,8 @@ baseEmailTemplate(
 "Withdrawal Request Cancelled",
 
 `Hi ${name},<br><br>
-
-Your withdrawal request of ${amount} has been cancelled.
+ 
+Your withdrawal request of ${amount} has been cancelled <br>.
 
 Reason: ${reason}<br>
 Wallet Balance: ${balance}`,
@@ -622,11 +626,11 @@ nextRankAmount:string,
 nextRank:string
 ) =>
 baseEmailTemplate(
-"🏆 Monthly Global Leaderboard – See Where You Stand!",
+"🏆 Monthly Global Leaderboard – See Where You Stand! <br>",
 
 `Hi ${name},<br><br>
 
-Our Vaultire Infinite community is thriving! Here are this month’s top performers:
+Our Vaultire Infinite community is thriving! Here are this month’s top performers <br>:
 
 ${tableHtml}
 

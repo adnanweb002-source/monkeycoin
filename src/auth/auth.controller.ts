@@ -28,6 +28,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { Role } from './enums/role.enum';
+import { ProfileChangeDto } from './dto/profile-update-dto';
 
 @Controller('auth')
 export class AuthController {
@@ -202,6 +203,16 @@ export class AuthController {
       : req.socket.remoteAddress;
     console.log("the ip address", ip, forwarded)
     return this.authService.changeAvatar(req.user.id, dto, ip);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('update-user-profile')
+  async updateProfile(@Request() req, @Body() dto: ProfileChangeDto) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
+    return this.authService.updateUserProfile(req.user.id, dto, ip);
   }
 
   // 2FA setup

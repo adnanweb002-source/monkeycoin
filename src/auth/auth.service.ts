@@ -19,6 +19,7 @@ import { NotificationsService } from 'src/notifications/notifcations.service';
 import * as crypto from 'crypto';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import axios from 'axios';
+import { ProfileChangeDto } from './dto/profile-update-dto';
 
 @Injectable()
 export class AuthService {
@@ -593,7 +594,7 @@ export class AuthService {
       });
     });
 
-    const location = await this.getLocation(ip)
+    const location = await this.getLocation(ip);
 
     const html = EmailTemplates.passwordChanged(
       user.firstName + ' ' + user.lastName,
@@ -656,7 +657,7 @@ export class AuthService {
       where: { userId, revoked: false },
       data: { revoked: true },
     });
-    const location = await this.getLocation(ip)
+    const location = await this.getLocation(ip);
     const html = EmailTemplates.passwordChanged(
       user.firstName + ' ' + user.lastName,
       new Date().toLocaleString(),
@@ -722,6 +723,8 @@ export class AuthService {
       user.firstName + ' ' + user.lastName,
       new Date().toLocaleString(),
       ip,
+      before.email,
+      dto.newEmail,
     );
 
     await this.notificationsService.createNotification(
@@ -759,7 +762,7 @@ export class AuthService {
         entityId: userId,
         ip,
         before,
-        after: { email: dto.newEmail },
+        after: { email: dto.avatarId },
       },
     });
 
@@ -767,12 +770,96 @@ export class AuthService {
       user.firstName + ' ' + user.lastName,
       new Date().toLocaleString(),
       ip,
+      `<img src=${this.cfg.get<string>('FRONTEND_URL')}/src/assets/avatars/${before.avatarId}.png width="140" style="display:block;border:0;">`,
+      `<img src=${this.cfg.get<string>('FRONTEND_URL')}/src/assets/avatars/${dto.avatarId}.png width="140" style="display:block;border:0;">`,
     );
 
     await this.notificationsService.createNotification(
       userId,
       'Avatar Changed',
       `Your account avatar was recently changed. If you did not perform this action, please contact our support immediately.`,
+      true,
+      html,
+      'Your Profile Has Been Updated',
+      '/profile',
+    );
+
+    return { ok: true };
+  }
+
+  async updateUserProfile(userId: number, dto: ProfileChangeDto, ip: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const before = user;
+
+    let data = {};
+
+    if (dto.firstName) {
+      data['firstName'] = dto.firstName;
+    }
+    if (dto.lastName) {
+      data['lastName'] = dto.lastName;
+    }
+    if (dto.country) {
+      data['country'] = dto.country;
+    }
+    if (dto.phoneNumber) {
+      data['phoneNumber'] = dto.phoneNumber;
+    }
+    if (dto.email) {
+      data['email'] = dto.email;
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('No update details found');
+    }
+
+    const htmlStringAfter = Object.entries(data)
+      .map(([key, value]) => `${key.toUpperCase()}: ${value}`)
+      .join('<br>');
+
+    const formatValue = (val: any) =>
+      typeof val === 'object' && val !== null
+        ? JSON.stringify(val)
+        : (val ?? '');
+
+    const htmlStringBefore = Object.entries(data)
+      .map(([key]) => `${key.toUpperCase()}: ${formatValue(before?.[key])}`)
+      .join('<br>');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: data,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'PROFILE_UPDATE',
+        entity: 'User',
+        entityId: userId,
+        ip,
+        before,
+        after: data,
+      },
+    });
+
+    const html = EmailTemplates.profileUpdated(
+      user.firstName + ' ' + user.lastName,
+      new Date().toLocaleString(),
+      ip,
+      htmlStringBefore,
+      htmlStringAfter,
+    );
+
+    await this.notificationsService.createNotification(
+      userId,
+      'Profile Updated',
+      `Your profile was recently changed. If you did not perform this action, please contact our support immediately.`,
       true,
       html,
       'Your Profile Has Been Updated',
@@ -803,7 +890,7 @@ export class AuthService {
         rightBv: true,
         avatarId: true,
         isWithdrawalRestricted: true,
-        lockWithdrawalsTillTarget: true
+        lockWithdrawalsTillTarget: true,
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

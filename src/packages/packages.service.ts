@@ -444,11 +444,10 @@ export class PackagesService {
         },
       });
 
-       // 🔹 BV = full package amount (adjust if business logic changes)
+      // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
       await this.addBinaryVolume(tx, user.id, bv);
-
 
       if (user.sponsorId) {
         await this.processTargetVolume(
@@ -498,58 +497,56 @@ export class PackagesService {
       });
 
       // ➜ REFERRAL BONUS and PACKAGE COUNT INCREMENT
-      if (buyerId == user.id) {
-        if (user?.sponsorId) {
-          const sponsor = await this.prisma.user.findUnique({
-            where: { id: user.sponsorId },
-          });
+      if (user?.sponsorId) {
+        const sponsor = await this.prisma.user.findUnique({
+          where: { id: user.sponsorId },
+        });
 
-          if (!sponsor) {
-            throw new NotFoundException('Sponsor not found');
-          }
-
-          const bonus = await this.prisma.adminSetting.findUnique({
-            where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
-          });
-
-          const bonusRate = this.parseRate(bonus?.value);
-
-          const bonusAmt = amt.mul(bonusRate);
-
-          let response: any = null;
-
-          if (bonusAmt.gt(0)) {
-            response = await this.walletService.creditWalletTransaction(tx, {
-              userId: user.sponsorId,
-              walletType: WalletType.I_WALLET,
-              amount: bonusAmt.toString(),
-              txType: TransactionType.REFERRAL_INCOME,
-              purpose: `Referral bonus from ${user.memberId}`,
-              meta: { fromMemberId: user.memberId },
-            });
-
-            const html = EmailTemplates.referralIncome(
-              sponsor.firstName + ' ' + sponsor.lastName,
-              bonusAmt.toFixed(),
-              user.firstName + ' ' + user.lastName,
-              response?.balanceAfter,
-            );
-
-            await this.notificationsService.createNotificationTransaction(
-              tx,
-              user.sponsorId,
-              'Referral Bonus Earned',
-              `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
-              true,
-              html,
-              'New Referral Earnings Credited!',
-              '/income/referral',
-            );
-          }
+        if (!sponsor) {
+          throw new NotFoundException('Sponsor not found');
         }
-      } 
 
-      if (buyerId !== user.id){
+        const bonus = await this.prisma.adminSetting.findUnique({
+          where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
+        });
+
+        const bonusRate = this.parseRate(bonus?.value);
+
+        const bonusAmt = amt.mul(bonusRate);
+
+        let response: any = null;
+
+        if (bonusAmt.gt(0)) {
+          response = await this.walletService.creditWalletTransaction(tx, {
+            userId: user.sponsorId,
+            walletType: WalletType.I_WALLET,
+            amount: bonusAmt.toString(),
+            txType: TransactionType.REFERRAL_INCOME,
+            purpose: `Referral bonus from ${user.memberId}`,
+            meta: { fromMemberId: user.memberId },
+          });
+
+          const html = EmailTemplates.referralIncome(
+            sponsor.firstName + ' ' + sponsor.lastName,
+            bonusAmt.toFixed(),
+            user.firstName + ' ' + user.lastName,
+            response?.balanceAfter,
+          );
+
+          await this.notificationsService.createNotificationTransaction(
+            tx,
+            user.sponsorId,
+            'Referral Bonus Earned',
+            `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
+            true,
+            html,
+            'New Referral Earnings Credited!',
+            '/income/referral',
+          );
+        }
+      }
+
+      if (buyerId !== user.id) {
         if (buyer?.sponsorId) {
           const sponsor = await this.prisma.user.findUnique({
             where: { id: buyer.sponsorId },
@@ -665,17 +662,19 @@ export class PackagesService {
     });
 
     return {
-      "message": "Package purchased successfully",
-      "data": {
-        "purchasedBy": buyer.memberId,
-        "purchasedFor": user.memberId,
-        "dailyRoI": pkg.dailyReturnPct,
-        "totalRoI": (pkg.durationDays * Number(pkg.dailyReturnPct) / 100) * Number(dto.amount),
-        "totalDays": pkg.durationDays,
-        
-      }
-    }
-
+      message: 'Package purchased successfully',
+      data: {
+        packageName: pkg.name,
+        amount: dto.amount,
+        purchasedBy: buyer.memberId,
+        purchasedFor: user.memberId,
+        dailyRoI: pkg.dailyReturnPct,
+        totalRoI:
+          ((pkg.durationDays * Number(pkg.dailyReturnPct)) / 100) *
+          Number(dto.amount),
+        totalDays: pkg.durationDays,
+      },
+    };
   }
 
   // -------- USER: MY PACKAGES --------

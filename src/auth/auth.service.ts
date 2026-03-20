@@ -888,9 +888,12 @@ export class AuthService {
         role: true,
         leftBv: true,
         rightBv: true,
+        rankLeftVolume: true,
+        rankRightVolume: true,
         avatarId: true,
         isWithdrawalRestricted: true,
         lockWithdrawalsTillTarget: true,
+        currentRank: true
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

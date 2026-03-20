@@ -132,14 +132,13 @@ export class TwoFactorService {
   async adminReset(targetUserId: number, adminId: number, ip: string) {
     // delete or disable the secret
 
-     const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: targetUserId },
     });
 
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
 
     await this.prisma.twoFactorSecret.updateMany({
       where: { userId: targetUserId },
@@ -165,7 +164,6 @@ export class TwoFactorService {
       '/profile?tab=security',
     );
 
-
     await this.prisma.auditLog.create({
       data: {
         actorId: adminId,
@@ -182,7 +180,7 @@ export class TwoFactorService {
 
   async requestReset(email: string, memberId: string, ip: string) {
     const user = await this.prisma.user.findUnique({
-      where: { email, memberId},
+      where: { email, memberId },
     });
 
     if (!user) {
@@ -221,8 +219,8 @@ export class TwoFactorService {
       true,
       html,
       'G2FA Reset Request Under Review',
-      "",
-      false
+      '',
+      false,
     );
 
     await this.prisma.auditLog.create({
@@ -233,6 +231,26 @@ export class TwoFactorService {
         entity: 'User',
         entityId: user.id,
         ip,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  async requestAdmin2FaReset(email: string, memberId: string, ip: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email, memberId },
+    });
+
+    if (!user) {
+      return { ok: true };
+    }
+
+    const request = await this.prisma.twoFactorResetManualRequest.create({
+      data: {
+        email,
+        memberId,
+        ipAddress: ip,
       },
     });
 
@@ -309,6 +327,166 @@ export class TwoFactorService {
       html,
       'G2FA Successfully Disabled',
     );
+
+    return { ok: true };
+  }
+
+  async initiateChange(userId: number, oldCode: string) {
+    const rec = await this.prisma.twoFactorSecret.findUnique({
+      where: { userId },
+      include: { user: {} },
+    });
+
+    if (!rec || !rec.enabled) {
+      throw new BadRequestException('2FA not enabled');
+    }
+
+    const isValidOld = this.verifyCode(rec.secretEnc, oldCode);
+    if (!isValidOld) {
+      throw new BadRequestException('Invalid current 2FA code');
+    }
+
+    // Generate new secret
+    const secret = speakeasy.generateSecret({
+      length: 20,
+      name: `Vaultire: ${rec.user.email}`,
+      issuer: 'Vaultire Infinite',
+    });
+
+    const enc = this.encryptSecret(secret.base32);
+
+    // Store as "pending"
+    await this.prisma.twoFactorSecret.update({
+      where: { userId },
+      data: {
+        tempSecretEnc: enc, // 👈 add this column
+        enabled: false, // temporarily disable
+      },
+    });
+
+    const qr = await this.generateQrCode(secret.otpauth_url);
+
+    return {
+      base32: secret.base32,
+      qr,
+    };
+  }
+
+  async confirmChange(userId: number, newCode: string, ip: string) {
+    const rec = await this.prisma.twoFactorSecret.findUnique({
+      where: { userId },
+      include: { user: true },
+    });
+
+    if (!rec?.tempSecretEnc || rec?.tempSecretEnc == '') {
+      throw new BadRequestException('No pending 2FA change');
+    }
+
+    const isValid = this.verifyCode(rec.tempSecretEnc, newCode);
+    if (!isValid) {
+      throw new BadRequestException('Invalid new 2FA code');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.twoFactorSecret.update({
+        where: { userId },
+        data: {
+          secretEnc: rec.tempSecretEnc,
+          tempSecretEnc: '',
+          enabled: true,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          g2faSecret: rec.tempSecretEnc,
+          isG2faEnabled: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          actorType: 'user',
+          action: '2FA_CHANGED',
+          entity: 'User',
+          entityId: userId,
+          ip,
+        },
+      });
+    });
+
+    return { ok: true };
+  }
+
+  async getManualResetRequests(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.twoFactorResetManualRequest.findMany({
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.twoFactorResetManualRequest.count(),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async updateManualResetRequestStatus(
+    requestId: number,
+    status: 'APPROVED' | 'REJECTED',
+    adminId: number,
+    ip: string,
+  ) {
+    const request = await this.prisma.twoFactorResetManualRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Request not found');
+    }
+
+    if (request.status !== 'OPEN') {
+      throw new BadRequestException('Request already processed');
+    }
+
+    // Update status first
+    await this.prisma.twoFactorResetManualRequest.update({
+      where: { id: requestId },
+      data: {
+        status,
+        updatedAt: new Date(),
+      },
+    });
+
+    // 🔥 If approved → disable 2FA
+    if (status === 'APPROVED') {
+      const user = await this.prisma.user.findUnique({
+        where: {
+          email: request.email,
+          memberId: request.memberId,
+        },
+      });
+
+      if (!user) {
+        throw new NotFoundException('User not found for this request');
+      }
+
+      await this.adminReset(user.id, adminId, ip);
+    }
 
     return { ok: true };
   }

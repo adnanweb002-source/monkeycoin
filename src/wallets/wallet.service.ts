@@ -524,17 +524,18 @@ export class WalletService {
     if (!sender) throw new NotFoundException('Sender not found');
 
     const transferSetting = await this.prisma.adminSetting.findUnique({
-      where: {key: SETTING_TYPE.TRANSFER_TYPE}
-    })
+      where: { key: SETTING_TYPE.TRANSFER_TYPE },
+    });
 
-    const mode = transferSetting?.value || "DOWNLINE"
-
+    const mode = transferSetting?.value || 'DOWNLINE';
 
     if (mode === 'DOWNLINE') {
       const isDownline = await this.isInDownline(fromUserId, recipient.id);
-      const isUpline = sender.sponsorId == recipient.id
+      const isUpline = await this.isInUpline(fromUserId, recipient.id)
       if (!isDownline && !isUpline)
-        throw new ForbiddenException('Recipient is neither in your downline nor upline');
+        throw new ForbiddenException(
+          'Recipient is neither in your downline nor upline',
+        );
     }
 
     // Atomic debit + credit
@@ -570,7 +571,7 @@ export class WalletService {
           txNumber: txNoOut,
           meta: {
             from: sender.memberId,
-            to: recipient.memberId
+            to: recipient.memberId,
           },
         },
       });
@@ -603,7 +604,7 @@ export class WalletService {
           purpose: `Transfer from ${fromUserId}`,
           balanceAfter: newToBalance.toFixed(),
           txNumber: txNoIn,
-          meta:{ from: sender.memberId, to: recipient.memberId },
+          meta: { from: sender.memberId, to: recipient.memberId },
         },
       });
 
@@ -887,6 +888,33 @@ export class WalletService {
       }
       depth++;
     }
+    return false;
+  }
+
+  async isInUpline(
+    descendantId: number,
+    candidateAncestorId: number,
+    maxDepth = 100,
+  ): Promise<boolean> {
+    if (descendantId === candidateAncestorId) return true;
+
+    let currentId: number | null = descendantId;
+    let depth = 0;
+
+    while (currentId && depth < maxDepth) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: currentId },
+        select: { parentId: true },
+      });
+
+      if (!user?.parentId) return false;
+
+      if (user.parentId === candidateAncestorId) return true;
+
+      currentId = user.parentId;
+      depth++;
+    }
+
     return false;
   }
 
@@ -1209,6 +1237,46 @@ export class WalletService {
     });
   }
 
+  async cancelWithdrawal(withdrawalRequestId: number, userId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const wr = await tx.withdrawalRequest.findUnique({
+        where: { id: withdrawalRequestId },
+        include: { wallet: true, user: true },
+      });
+      if (!wr) throw new NotFoundException('Withdrawal request not found');
+      if (wr.status !== 'PENDING') {
+        throw new BadRequestException('Withdrawal already processed');
+      }
+      if (wr.userId !== userId) {
+        throw new ForbiddenException('Request forbidden');
+      }
+      await tx.withdrawalRequest.update({
+        where: { id: wr.id },
+        data: {
+          status: 'CANCELLED',
+          updatedAt: new Date(),
+        },
+      });
+
+      const html = EmailTemplates.withdrawalCancelled(
+        wr.user.firstName + ' ' + wr.user.lastName,
+        wr.amount.toFixed(),
+        'User Cancelled the Withdrawal Request',
+        wr.wallet.balance.toString(),
+      );
+      await this.notificationsService.createNotification(
+        wr.userId,
+        'Withdrawal Rejected',
+        `Your withdrawal request of ${wr.amount.toFixed()} has been cancelled. The reason is: User Cancellation. Please contact support for more information.`,
+        true,
+        html,
+        'Withdrawal Request Cancelled',
+        '/wallet/withdrawal-requests',
+      );
+      return { ok: true };
+    });
+  }
+
   async adminBonusCredit(params: {
     userId: number;
     amount: string;
@@ -1254,8 +1322,8 @@ export class WalletService {
   ) {
     if (userRole !== Role.ADMIN) {
       const wallet = await this.getWallet(userId, walletType);
-      if(!wallet){
-        throw new BadRequestException("Wallet not found")
+      if (!wallet) {
+        throw new BadRequestException('Wallet not found');
       }
       const transactions = await this.prisma.walletTransaction.findMany({
         where: { walletId: wallet.id },
@@ -1270,8 +1338,8 @@ export class WalletService {
       return transactions;
     } else {
       const wallet = await this.getWallet(userId, walletType);
-      if (!wallet){
-         throw new BadRequestException("Wallet not found")
+      if (!wallet) {
+        throw new BadRequestException('Wallet not found');
       }
       const transactions = await this.prisma.walletTransaction.findMany({
         where: { walletId: wallet.id },
@@ -1322,7 +1390,7 @@ export class WalletService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
-         include: {
+        include: {
           wallet: {},
         },
       });

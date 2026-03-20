@@ -57,76 +57,76 @@ enum TransactionType {
 // ────────────────────────────────────────────────
 //
 
-model User {
-  id             Int       @id @default(autoincrement())
-  memberId       String    @unique @map("member_id")
-  firstName      String    @map("first_name") @default("")
-  lastName       String    @map("last_name")@default("")
-  email          String    @unique
-  phoneNumber    String    @map("phone_number")@default("")
-  passwordHash   String    @map("password_hash")
-  country        String    @default("")
-  sponsorId      Int?      @map("sponsor_id")
-  parentId       Int?      @map("parent_id")
-  position       Position? @default(LEFT)
-  role           Role     @default(USER)
-  status         Status    @default(ACTIVE)
-  isWithdrawalRestricted Boolean @default(false)
-  rankId         Int?      @map("rank_id")
-  activePackageCount  Int   @default(0)
-  avatarId       String     @map("avatar_id")@default("default")
+  model User {
+    id             Int       @id @default(autoincrement())
+    memberId       String    @unique @map("member_id")
+    firstName      String    @map("first_name") @default("")
+    lastName       String    @map("last_name")@default("")
+    email          String    @unique
+    phoneNumber    String    @map("phone_number")@default("")
+    passwordHash   String    @map("password_hash")
+    country        String    @default("")
+    sponsorId      Int?      @map("sponsor_id")
+    parentId       Int?      @map("parent_id")
+    position       Position? @default(LEFT)
+    role           Role     @default(USER)
+    status         Status    @default(ACTIVE)
+    isWithdrawalRestricted Boolean @default(false)
+    rankId         Int?      @map("rank_id")
+    activePackageCount  Int   @default(0)
+    avatarId       String     @map("avatar_id")@default("default")
 
-  leftBv         Decimal   @default(0) @map("left_bv")
-  rightBv        Decimal   @default(0) @map("right_bv")
+    leftBv         Decimal   @default(0) @map("left_bv")
+    rightBv        Decimal   @default(0) @map("right_bv")
 
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+    createdAt      DateTime  @default(now()) @map("created_at")
+    updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  g2faSecret     String
-  isG2faEnabled  Boolean
+    g2faSecret     String
+    isG2faEnabled  Boolean
 
-  currentRank        Int       @default(0)
+    currentRank        Int       @default(0)
 
-  rankLeftVolume     Decimal   @default(0) @db.Decimal(18,2)
-  rankRightVolume    Decimal   @default(0) @db.Decimal(18,2)
+    rankLeftVolume     Decimal   @default(0) @db.Decimal(18,2)
+    rankRightVolume    Decimal   @default(0) @db.Decimal(18,2)
 
-  lockWithdrawalsTillTarget Boolean @default(false)
+    lockWithdrawalsTillTarget Boolean @default(false)
 
-  // Self-relations (binary tree)
-  sponsor        User?     @relation("UserSponsor", fields: [sponsorId], references: [id])
-  sponsoredUsers User[]    @relation("UserSponsor")
+    // Self-relations (binary tree)
+    sponsor        User?     @relation("UserSponsor", fields: [sponsorId], references: [id])
+    sponsoredUsers User[]    @relation("UserSponsor")
 
-  parent         User?     @relation("UserParent", fields: [parentId], references: [id])
-  children       User[]    @relation("UserParent")
+    parent         User?     @relation("UserParent", fields: [parentId], references: [id])
+    children       User[]    @relation("UserParent")
 
-  // Relations
-  twoFactorSecret TwoFactorSecret?
-  refreshTokens   RefreshToken[]
-  auditLogs       AuditLog[] @relation("AuditByUser")
+    // Relations
+    twoFactorSecret TwoFactorSecret?
+    refreshTokens   RefreshToken[]
+    auditLogs       AuditLog[] @relation("AuditByUser")
 
-  // Wallet relations
-  wallets         Wallet[]
-  walletTxns      WalletTransaction[]
-  withdrawalRequests WithdrawalRequest[]
-  depositRequests DepositRequest[]
-  packagePurchases PackagePurchase[]  @relation("PurchasedUser")
-  boughtPurchases   PackagePurchase[] @relation("BuyerUser")
-  externalWallets   UserWallet[]
-  binaryPaymentLogs  BinaryPayoutLog[]
-  externalDeposits   ExternalDeposit[]
-  twoFactorResetTokens TwoFactorResetToken[]
-  passwordResetTokens PasswordResetToken[]
-  targetAssignment TargetAssignment[]
+    // Wallet relations
+    wallets         Wallet[]
+    walletTxns      WalletTransaction[]
+    withdrawalRequests WithdrawalRequest[]
+    depositRequests DepositRequest[]
+    packagePurchases PackagePurchase[]  @relation("PurchasedUser")
+    boughtPurchases   PackagePurchase[] @relation("BuyerUser")
+    externalWallets   UserWallet[]
+    binaryPaymentLogs  BinaryPayoutLog[]
+    externalDeposits   ExternalDeposit[]
+    twoFactorResetTokens TwoFactorResetToken[]
+    passwordResetTokens PasswordResetToken[]
+    targetAssignment TargetAssignment[]
 
-  queries Query[]
-  queryReplies QueryReply[]
+    queries Query[]
+    queryReplies QueryReply[]
 
-  notifications Notification[]
-  rankClaims    RankRewardLog[]
-  @@map("users")
+    notifications Notification[]
+    rankClaims    RankRewardLog[]
+    @@map("users")
 
-  @@index([memberId, lockWithdrawalsTillTarget])
-}
+    @@index([memberId, lockWithdrawalsTillTarget])
+  }
 
 //
 // ────────────────────────────────────────────────
@@ -138,6 +138,7 @@ model TwoFactorSecret {
   id         Int      @id @default(autoincrement())
   userId     Int      @unique
   secretEnc  String
+  tempSecretEnc String @default("")
   createdAt  DateTime @default(now()) @map("created_at")
   enabled    Boolean  @default(false)
 
@@ -271,7 +272,7 @@ model WithdrawalRequest {
   amount     Decimal
   method     String
   address    String?
-  status     String   @default("PENDING") // PENDING / APPROVED / REJECTED / FAILED
+  status     String   @default("PENDING") // PENDING / APPROVED / REJECTED / FAILED / CANCELLED
   adminNote  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -489,6 +490,7 @@ model BinaryPayoutLog {
 
 enum SETTING_TYPE {
   TRANSFER_TYPE
+  PACKAGE_PURCHASE_TYPE
   BACK_OFFICE_CLOSING_TIME
   BACK_OFFICE_OPENING_TIME
   BINARY_INCOME_RATE
@@ -625,4 +627,15 @@ model DepositBonus {
    bonusPercentage Int
    startDate DateTime
    endDate DateTime
+}
+
+model TwoFactorResetManualRequest {
+  id        Int     @id @default(autoincrement())
+  email     String
+  memberId String
+  ipAddress String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  status String @default("OPEN") // OPEN, APPROVED, REJECTED
 }

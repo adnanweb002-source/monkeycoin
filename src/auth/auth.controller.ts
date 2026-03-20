@@ -7,6 +7,7 @@ import {
   Get,
   ForbiddenException,
   UnauthorizedException,
+  BadRequestException,
   Param,
   Query,
   Ip,
@@ -201,7 +202,7 @@ export class AuthController {
     const ip = forwarded
       ? (forwarded as string).split(',')[0]
       : req.socket.remoteAddress;
-    console.log("the ip address", ip, forwarded)
+    console.log('the ip address', ip, forwarded);
     return this.authService.changeAvatar(req.user.id, dto, ip);
   }
 
@@ -336,6 +337,84 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     return this.twoFactorService.requestReset(email, memberId, ip);
+  }
+
+  @Post('/request-2fa-reset-by-admin')
+  async requestTwoFactorResetByAdmin(
+    @Body('email') email: string,
+    @Body('memberId') memberId: string,
+    @Request() req,
+  ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
+    return this.twoFactorService.requestAdmin2FaReset(email, memberId, ip);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/change/initiate')
+  async initiate2faChange(@Request() req, @Body('oldCode') oldCode: string) {
+    if (!oldCode) {
+      throw new BadRequestException('Old 2FA code is required');
+    }
+
+    return this.twoFactorService.initiateChange(req.user.id, oldCode);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/change/confirm')
+  async confirm2faChange(
+    @Request() req,
+    @Body('newCode') newCode: string,
+    @Ip() ip: string,
+  ) {
+    if (!newCode) {
+      throw new BadRequestException('New 2FA code is required');
+    }
+
+    return this.twoFactorService.confirmChange(req.user.id, newCode, ip);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('admin/2fa-reset-requests')
+  async getManual2faResetRequests(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+  ) {
+    const parsedPage = page ? parseInt(page, 10) : 1;
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+
+    return this.twoFactorService.getManualResetRequests(
+      parsedPage,
+      parsedLimit,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('admin/2fa-reset-requests/:id/status')
+  async updateManual2faRequestStatus(
+    @Param('id') id: string,
+    @Body('status') status: 'APPROVED' | 'REJECTED',
+    @Request() req,
+    @Ip() ip: string,
+  ) {
+    if (!req.user || req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Admin role required');
+    }
+
+    if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
+      throw new BadRequestException('Invalid status');
+    }
+
+    return this.twoFactorService.updateManualResetRequestStatus(
+      parseInt(id, 10),
+      status,
+      req.user.id,
+      ip,
+    );
   }
 
   @Post('/reset-2fa')

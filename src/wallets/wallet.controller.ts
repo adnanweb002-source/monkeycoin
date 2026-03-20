@@ -133,6 +133,16 @@ export class WalletController {
     return this.svc.rejectWithdrawal(Number(id), req.user.id, body.adminNote);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('/withdrawal/:id/cancel')
+  cancelWithdrawal(
+    @Param('id') id: string,
+    @Req() req,
+  ) {
+    return this.svc.cancelWithdrawal(Number(id), req.user.id);
+  }
+
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('admin/bonus-credit')

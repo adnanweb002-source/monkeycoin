@@ -303,9 +303,6 @@ export class PackagesService {
     buyerRole: Role,
     dto: PurchasePackageDto, // includes split + targetUserId?
   ) {
-    this.log.log('BuyerID, Buyer Role and dto' + buyerId + buyerRole);
-    this.log.log(`The dto: ${dto}`);
-
     const targetUserId = dto.userId;
 
     let user: User | null;
@@ -334,16 +331,36 @@ export class PackagesService {
       throw new Error('Buyer not found');
     }
 
+    if (buyer.id! == user.id) {
+    }
+
     // If the buyer is not an admin, the userId must be either the buyer themselves or someone in the downline
     if (buyerRole !== Role.ADMIN) {
       if (targetUserId !== user?.memberId) {
-        const isDownline = await this.walletService.isInDownline(
-          buyerId,
-          user.id,
-          Infinity,
-        );
-        if (!isDownline) {
-          throw new BadRequestException('Target user is not in your downline');
+        const packagePurchaseType = await this.prisma.adminSetting.findUnique({
+          where: { key: SETTING_TYPE.PACKAGE_PURCHASE_TYPE },
+        });
+        if (  
+          packagePurchaseType &&
+          packagePurchaseType.value == 'DOWNLINE'
+        ) {
+          const isDownline = await this.walletService.isInDownline(
+            buyerId,
+            user.id,
+            Infinity,
+          );
+
+          const isUpline = await this.walletService.isInUpline(
+            buyerId,
+            user.id,
+            Infinity,
+          );
+
+          if (!isDownline && !isUpline) {
+            throw new BadRequestException(
+              'Target user is neither in your upline nor in your downline',
+            );
+          }
         }
       }
     }

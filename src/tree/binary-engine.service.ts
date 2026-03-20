@@ -24,10 +24,10 @@ export class BinaryEngineService {
 
   async registerClosingCron() {
     const setting = await this.prisma.adminSetting.findUnique({
-      where: { key: 'BACK_OFFICE_CLOSING_TIME' },
+      where: { key: 'BACK_OFFICE_OPENING_TIME' },
     });
 
-    const time = setting?.value ?? '23:59';
+    const time = setting?.value ?? '00:00';
     const [h, m] = time.split(':').map(Number);
 
     const cronExpr = `${m} ${h} * * *`;

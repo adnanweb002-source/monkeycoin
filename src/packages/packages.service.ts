@@ -17,6 +17,7 @@ import { SETTING_TYPE } from '@prisma/client';
 import { Logger } from '@nestjs/common';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { TargetSalesType } from '@prisma/client';
+import { DateTime } from 'luxon';
 @Injectable()
 export class PackagesService {
   private readonly log = new Logger(PackagesService.name);
@@ -340,10 +341,7 @@ export class PackagesService {
         const packagePurchaseType = await this.prisma.adminSetting.findUnique({
           where: { key: SETTING_TYPE.PACKAGE_PURCHASE_TYPE },
         });
-        if (  
-          packagePurchaseType &&
-          packagePurchaseType.value == 'DOWNLINE'
-        ) {
+        if (packagePurchaseType && packagePurchaseType.value == 'DOWNLINE') {
           const isDownline = await this.walletService.isInDownline(
             buyerId,
             user.id,
@@ -404,48 +402,64 @@ export class PackagesService {
           },
         });
       }
-      // next-day start + duration
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() + 1);
 
-      // If start Date is a sunday, shift to the following Monday
-      if (startDate.getDay() === 0) {
-        startDate.setDate(startDate.getDate() + 1);
+      const zone = 'America/Toronto';
+
+      // next-day start
+      let startDate = DateTime.now()
+        .setZone(zone)
+        .plus({ days: 1 })
+        .startOf('day');
+
+      // If Sunday → move to Monday
+      if (startDate.weekday === 7) {
+        startDate = startDate.plus({ days: 1 });
       }
 
-      // if start Date is a holiday, shift to the next day until it's not a holiday
-      const holiday = await this.prisma.holiday.findFirst({
-        where: { date: startDate },
-      });
-
-      while (holiday) {
-        startDate.setDate(startDate.getDate() + 1);
-        const nextHoliday = await this.prisma.holiday.findFirst({
-          where: { date: startDate },
+      // Skip holidays
+      while (true) {
+        const holiday = await this.prisma.holiday.findFirst({
+          where: {
+            date: startDate.toJSDate(),
+          },
         });
-        if (!nextHoliday) break;
+
+        if (!holiday) break;
+
+        startDate = startDate.plus({ days: 1 });
+
+        if (startDate.weekday === 7) {
+          startDate = startDate.plus({ days: 1 });
+        }
       }
 
-      startDate.setHours(0, 0, 0, 0);
+      // end date
+      let endDate = startDate.plus({ days: pkg.durationDays });
 
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + pkg.durationDays);
-
-      // If end Date falls on a Sunday, shift by one day to Saturday
-      if (endDate.getDay() === 0) {
-        endDate.setDate(endDate.getDate() + 1);
+      // Sunday fix
+      if (endDate.weekday === 7) {
+        endDate = endDate.plus({ days: 1 });
       }
 
-      // if end Date falls on a holiday, shift to the next day until it's not a holiday
-      let endHoliday = await this.prisma.holiday.findFirst({
-        where: { date: endDate },
-      });
-      while (endHoliday) {
-        endDate.setDate(endDate.getDate() + 1);
-        endHoliday = await this.prisma.holiday.findFirst({
-          where: { date: endDate },
+      // Skip holidays
+      while (true) {
+        const holiday = await this.prisma.holiday.findFirst({
+          where: {
+            date: endDate.toJSDate(),
+          },
         });
+
+        if (!holiday) break;
+
+        endDate = endDate.plus({ days: 1 });
+
+        if (endDate.weekday === 7) {
+          endDate = endDate.plus({ days: 1 });
+        }
       }
+
+      const finalStartDate = startDate.toJSDate();
+      const finalEndDate = endDate.toJSDate();
 
       const purchase = await tx.packagePurchase.create({
         data: {
@@ -453,8 +467,8 @@ export class PackagesService {
           buyerId,
           packageId: pkg.id,
           amount: amt.toFixed(),
-          startDate,
-          endDate,
+          startDate: finalStartDate,
+          endDate: finalEndDate,
           status: 'ACTIVE',
           splitConfig: dto.split,
           isTarget: dto.isTarget ?? false,
@@ -616,6 +630,10 @@ export class PackagesService {
         }
       }
 
+      const displayStartDate = startDate.toFormat("ccc dd LLLL yyyy ZZZZ");
+
+      const displayEndDate = endDate.toFormat("ccc dd LLLL yyyy ZZZZ");
+
       if (buyerId !== user.id) {
         // send notification to buyer
         const html = EmailTemplates.packagePurchasedForOther(
@@ -630,7 +648,7 @@ export class PackagesService {
           tx,
           buyerId,
           `Package Purchased for ${user.firstName} ${user.lastName}`,
-          `You have successfully purchased the ${pkg.name} package for ${user.firstName} ${user.lastName}. The package will be active from ${startDate.toDateString()} to ${endDate.toDateString()}.`,
+          `You have successfully purchased the ${pkg.name} package for ${user.firstName} ${user.lastName}. The package will be active from ${displayStartDate} to ${displayEndDate}.`,
           true,
           html,
           `You purchased ${pkg.name} for ${user.firstName} ${user.lastName}`,
@@ -648,7 +666,7 @@ export class PackagesService {
           tx,
           user.id,
           'Package Purchased for You',
-          `The ${pkg.name} package has been purchased for you by ${buyer.firstName} ${buyer.lastName}. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
+          `The ${pkg.name} package has been purchased for you by ${buyer.firstName} ${buyer.lastName}. It will be active from ${displayStartDate} to ${displayEndDate}. Enjoy the benefits of your new package!`,
           true,
           html2,
           `New Package Added to Your Account`,
@@ -661,7 +679,7 @@ export class PackagesService {
           amt.toFixed(),
           'Transaction Id',
           parts.map((p) => `${p.wallet}: $${p.amount}`).join(', '),
-          startDate.toDateString(),
+          displayStartDate,
           '/profile?tab=packages',
         );
 
@@ -669,7 +687,7 @@ export class PackagesService {
           tx,
           user.id,
           'Package Purchased',
-          `You have successfully purchased the ${pkg.name} package. It will be active from ${startDate.toDateString()} to ${endDate.toDateString()}. Enjoy the benefits of your new package!`,
+          `You have successfully purchased the ${pkg.name} package. It will be active from ${displayStartDate} to ${displayEndDate}. Enjoy the benefits of your new package!`,
           true,
           html,
           `${pkg.name} purchased successfully`,

@@ -383,6 +383,7 @@ export class WalletController {
     @Query('to') to?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
+    @Query('self') self?: string,
   ) {
     return this.svc.getGainReport(
       req.user.id,
@@ -391,6 +392,7 @@ export class WalletController {
       to ? new Date(to) : undefined,
       Number(skip) || 0,
       Number(take) || 20,
+      self
     );
   }
 

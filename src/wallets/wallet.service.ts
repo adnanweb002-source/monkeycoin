@@ -531,7 +531,7 @@ export class WalletService {
 
     if (mode === 'DOWNLINE') {
       const isDownline = await this.isInDownline(fromUserId, recipient.id);
-      const isUpline = await this.isInUpline(fromUserId, recipient.id)
+      const isUpline = await this.isInUpline(fromUserId, recipient.id);
       if (!isDownline && !isUpline)
         throw new ForbiddenException(
           'Recipient is neither in your downline nor upline',
@@ -1489,7 +1489,16 @@ export class WalletService {
     to?: Date,
     skip = 0,
     take = 10,
+    self: string = 'no',
   ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user){
+      throw new BadRequestException("User not found")
+    }
+
     const where: any = {
       userId,
       direction: 'CREDIT',
@@ -1500,6 +1509,21 @@ export class WalletService {
 
     if (type == TransactionType.PACKAGE_PURCHASE) {
       where.direction = 'DEBIT';
+      if (self === 'yes') {
+        where.meta = {
+          path: ['purchasedFor'],
+          equals: user.memberId,
+        };
+
+        where.AND = [
+          {
+            meta: {
+              path: ['purchasedBy'],
+              equals: user.memberId,
+            },
+          },
+        ];
+      }
     }
 
     if (from || to) {

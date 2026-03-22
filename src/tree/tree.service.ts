@@ -337,4 +337,29 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
       }))
       .sort((a, b) => Number(b.teamBV) - Number(a.teamBV));
   }
+
+  async searchMemberIdInTree(rootUserId: number, memberId: string) {
+    const result = await this.prisma.$queryRaw<{ id: number }[]>`
+    WITH RECURSIVE subtree AS (
+      SELECT id, member_id
+      FROM "users"
+      WHERE id = ${rootUserId}
+
+      UNION ALL
+
+      SELECT u.id, u.member_id
+      FROM "users" u
+      JOIN subtree s ON u.parent_id = s.id
+    )
+    SELECT id FROM subtree
+    WHERE member_id = ${memberId}
+    LIMIT 1;
+  `;
+
+    if (!result.length) {
+      throw new BadRequestException('Member not found in your tree');
+    }
+
+    return { userId: result[0].id };
+  }
 }

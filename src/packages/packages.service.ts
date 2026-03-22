@@ -577,59 +577,6 @@ export class PackagesService {
         }
       }
 
-      if (buyerId !== user.id) {
-        if (buyer?.sponsorId) {
-          const sponsor = await this.prisma.user.findUnique({
-            where: { id: buyer.sponsorId },
-          });
-
-          if (!sponsor) {
-            throw new NotFoundException('Sponsor not found');
-          }
-
-          const bonus = await this.prisma.adminSetting.findUnique({
-            where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
-          });
-
-          const bonusRate = this.parseRate(bonus?.value);
-
-          const bonusAmt = amt.mul(bonusRate);
-
-          let response: any = null;
-
-          if (bonusAmt.gt(0)) {
-            response = await this.walletService.creditWalletTransaction(tx, {
-              userId: buyer.sponsorId,
-              walletType: WalletType.I_WALLET,
-              amount: bonusAmt.toString(),
-              txType: TransactionType.REFERRAL_INCOME,
-              purpose: `Referral bonus from ${buyer.memberId}`,
-              meta: { fromMemberId: buyer.memberId },
-            });
-
-            await this.addBinaryVolume(tx, buyer.id, bv);
-
-            const html = EmailTemplates.referralIncome(
-              sponsor.firstName + ' ' + sponsor.lastName,
-              bonusAmt.toFixed(),
-              buyer.firstName + ' ' + buyer.lastName,
-              response?.balanceAfter,
-            );
-
-            await this.notificationsService.createNotificationTransaction(
-              tx,
-              buyer.sponsorId,
-              'Referral Bonus Earned',
-              `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${buyer.firstName} ${buyer.lastName}'s package purchase.`,
-              true,
-              html,
-              'New Referral Earnings Credited!',
-              '/income/referral',
-            );
-          }
-        }
-      }
-
       const displayStartDate = startDate.toFormat("ccc dd LLLL yyyy ZZZZ");
 
       const displayEndDate = endDate.toFormat("ccc dd LLLL yyyy ZZZZ");

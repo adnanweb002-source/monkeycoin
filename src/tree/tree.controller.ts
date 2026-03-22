@@ -51,4 +51,11 @@ export class TreeController {
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
     return this.tree.getDownlineDepositFunds(req.user.id, pageNum, pageSizeNum);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('search/member')
+  async searchMember(@Query('rootUserId') rootUserId:string, @Query('memberId') memberId: string){
+    const rootUser = parseInt(rootUserId)
+    return this.tree.searchMemberIdInTree(rootUser, memberId)
+  }
 }

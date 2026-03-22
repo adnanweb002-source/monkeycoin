@@ -111,7 +111,7 @@ export class RankService {
        * Credit reward
        */
       if (rank.rewardAmount) {
-        await this.walletService.creditWallet({
+        await this.walletService.creditWalletTransaction(tx, {
           userId,
           walletType: WalletType.BONUS_WALLET,
           amount: rank.rewardAmount.toString(),

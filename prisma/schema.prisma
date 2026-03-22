@@ -72,6 +72,7 @@ enum TransactionType {
     role           Role     @default(USER)
     status         Status    @default(ACTIVE)
     isWithdrawalRestricted Boolean @default(false)
+    isCrossLineTransferRestricted Boolean @default(false)
     rankId         Int?      @map("rank_id")
     activePackageCount  Int   @default(0)
     avatarId       String     @map("avatar_id")@default("default")

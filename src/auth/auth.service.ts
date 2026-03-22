@@ -296,7 +296,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     if (user.status === 'SUSPENDED') {
-      throw new UnauthorizedException('Account suspended. Contact support.');
+      throw new ForbiddenException('Account suspended. Contact support.');
     }
 
     const ok = await this.verifyPassword(user.passwordHash, dto.password);
@@ -893,6 +893,7 @@ export class AuthService {
         avatarId: true,
         isWithdrawalRestricted: true,
         lockWithdrawalsTillTarget: true,
+        isCrossLineTransferRestricted: true,
         currentRank: true
       },
     });

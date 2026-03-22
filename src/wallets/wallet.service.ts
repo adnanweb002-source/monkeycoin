@@ -17,6 +17,7 @@ import { CreateCryptoDepositDto } from './dto/deposit.dto';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { SETTING_TYPE } from '@prisma/client';
+import { DateTime } from 'luxon';
 @Injectable()
 export class WalletService {
   constructor(
@@ -507,7 +508,6 @@ export class WalletService {
     twoFactorVerified?: boolean; // boolean after 2FA check
   }) {
     const { fromUserId, fromWalletType, toMemberId, amount } = params;
-    console.log('The params for transferFunds are:', params);
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
 
@@ -522,6 +522,10 @@ export class WalletService {
       where: { id: fromUserId },
     });
     if (!sender) throw new NotFoundException('Sender not found');
+    if (sender.isWithdrawalRestricted)
+      throw new NotFoundException(
+        'Withdrawals have been restricted for this account. Contact support',
+      );
 
     const transferSetting = await this.prisma.adminSetting.findUnique({
       where: { key: SETTING_TYPE.TRANSFER_TYPE },
@@ -529,13 +533,20 @@ export class WalletService {
 
     const mode = transferSetting?.value || 'DOWNLINE';
 
+    const isDownline = await this.isInDownline(fromUserId, recipient.id);
+    const isUpline = await this.isInUpline(fromUserId, recipient.id);
+
     if (mode === 'DOWNLINE') {
-      const isDownline = await this.isInDownline(fromUserId, recipient.id);
-      const isUpline = await this.isInUpline(fromUserId, recipient.id);
       if (!isDownline && !isUpline)
         throw new ForbiddenException(
           'Recipient is neither in your downline nor upline',
         );
+    }
+
+    if (sender.isCrossLineTransferRestricted && !isDownline && !isUpline) {
+      throw new ForbiddenException(
+        'Cross Line Transfers have been disabled for your account. Contact support.',
+      );
     }
 
     // Atomic debit + credit
@@ -757,6 +768,14 @@ export class WalletService {
   }) {
     const { userId, walletType, amount, method, address } = params;
 
+    const zone = 'America/Toronto';
+
+    let time = DateTime.now().setZone(zone);
+
+    if (time.weekday == 1) {
+      throw new ForbiddenException('Withdrawals are only allowed on Mondays');
+    }
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -800,6 +819,28 @@ export class WalletService {
         },
       });
 
+      const newBalance = bal.minus(amt);
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: newBalance.toFixed() },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: wr.userId,
+          type: TransactionType.WITHDRAW,
+          amount: amt.toFixed(),
+          direction: 'DEBIT',
+          purpose: 'Withdrawal request',
+          balanceAfter: newBalance.toFixed(),
+          txNumber: generateTxNumber(),
+          meta: {
+            withdrawalRequestId: wr.id,
+          },
+        },
+      });
+
       const html = EmailTemplates.withdrawalRequest(
         user.firstName + ' ' + user.lastName,
         amt.toFixed(),
@@ -807,7 +848,8 @@ export class WalletService {
         address,
       );
 
-      await this.notificationsService.createNotification(
+      await this.notificationsService.createNotificationTransaction(
+        tx,
         userId,
         'Withdrawal Requested',
         `Your withdrawal request of $${amt.toFixed()}   via ${method} has been created and is pending approval. We will notify you once it is processed.`,
@@ -1131,40 +1173,9 @@ export class WalletService {
         throw new BadRequestException('Withdrawal already processed');
       }
 
-      // Debit the wallet
-
       const wallet = await tx.wallet.findUnique({ where: { id: wr.walletId } });
       if (!wallet) throw new NotFoundException('Wallet not found');
       const amt = new Decimal(wr.amount);
-      const bal = new Decimal(wallet.balance.toString());
-
-      if (bal.lt(amt)) {
-        throw new BadRequestException(
-          'Insufficient balance in wallet for withdrawal',
-        );
-      }
-
-      const newBalance = bal.minus(amt);
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: newBalance.toFixed() },
-      });
-      await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          userId: wr.userId,
-          type: TransactionType.WITHDRAW,
-          amount: amt.toFixed(),
-          direction: 'DEBIT',
-          purpose: 'Withdrawal approved by admin',
-          balanceAfter: newBalance.toFixed(),
-          txNumber: generateTxNumber(),
-          meta: {
-            withdrawalRequestId: wr.id,
-            approvedBy: adminId,
-          },
-        },
-      });
 
       await tx.withdrawalRequest.update({
         where: { id: wr.id },
@@ -1184,7 +1195,7 @@ export class WalletService {
       await this.notificationsService.createNotification(
         wr.userId,
         'Withdrawal Approved',
-        `Your withdrawal request of $${amt.toFixed()}   has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
+        `Your withdrawal request of $${amt.toFixed()} has been approved and processed. Please allow some time for the transaction to reflect in your account.`,
         true,
         html,
         'Withdrawal Approved',
@@ -1215,6 +1226,37 @@ export class WalletService {
           status: 'REJECTED',
           updatedAt: new Date(),
           adminNote: adminNote,
+        },
+      });
+      const wallet = await tx.wallet.findUnique({
+        where: {
+          id: wr.walletId,
+        },
+      });
+      if (!wallet) {
+        throw new BadRequestException('Corresponding wallet not found');
+      }
+      const amt = new Decimal(wr.amount);
+      const bal = new Decimal(wallet.balance.toString());
+      const newBalance = bal.plus(amt);
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: newBalance.toFixed() },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: wr.userId,
+          type: TransactionType.WITHDRAW,
+          amount: amt.toFixed(),
+          direction: 'CREDIT',
+          purpose: 'Withdrawal rejected',
+          balanceAfter: newBalance.toFixed(),
+          txNumber: generateTxNumber(),
+          meta: {
+            withdrawalRequestId: wr.id,
+          },
         },
       });
 
@@ -1255,6 +1297,38 @@ export class WalletService {
         data: {
           status: 'CANCELLED',
           updatedAt: new Date(),
+        },
+      });
+
+      const wallet = await tx.wallet.findUnique({
+        where: {
+          id: wr.walletId,
+        },
+      });
+      if (!wallet) {
+        throw new BadRequestException('Corresponding wallet not found');
+      }
+      const amt = new Decimal(wr.amount);
+      const bal = new Decimal(wallet.balance.toString());
+      const newBalance = bal.plus(amt);
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: newBalance.toFixed() },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: wr.userId,
+          type: TransactionType.WITHDRAW,
+          amount: amt.toFixed(),
+          direction: 'CREDIT',
+          purpose: 'Withdrawal cancelled by user',
+          balanceAfter: newBalance.toFixed(),
+          txNumber: generateTxNumber(),
+          meta: {
+            withdrawalRequestId: wr.id,
+          },
         },
       });
 
@@ -1495,8 +1569,8 @@ export class WalletService {
       where: { id: userId },
     });
 
-    if (!user){
-      throw new BadRequestException("User not found")
+    if (!user) {
+      throw new BadRequestException('User not found');
     }
 
     const where: any = {

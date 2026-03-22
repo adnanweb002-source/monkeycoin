@@ -64,6 +64,19 @@ export class AdminUsersController {
     );
   }
 
+  @Patch(':userId/restrict-cross-line-transfer')
+  restrictCrossLineTransfer(
+    @Param('userId') userId: string,
+    @Req() req,
+    @Body('restrict') restrict: boolean,
+  ) {
+    return this.svc.restrictUserCrossLineTransfer(
+      req.user.id,
+      Number(userId),
+      restrict,
+    );
+  }
+
   @Patch(':userId/set-password')
   setPassword(@Param('userId') userId: string, @Req() req) {
     return this.svc.adminSetPassword(
@@ -134,8 +147,7 @@ export class AdminController {
   }
 
   @Get('settings/get')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @UseGuards(JwtAuthGuard)
   getSettings(@Query('key') key?: SETTING_TYPE) {
     return this.adminService.getSetting(key);
   }

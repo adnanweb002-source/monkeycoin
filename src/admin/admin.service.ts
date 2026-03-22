@@ -24,6 +24,11 @@ export class AdminUsersService {
 
   async getAllUsers(take: number, skip: number) {
     const users = await this.prisma.user.findMany({
+      where: {
+        memberId: {
+          not: 'COMPANY',
+        },
+      },
       skip,
       take,
       orderBy: { id: 'asc' },
@@ -39,6 +44,7 @@ export class AdminUsersService {
         createdAt: true,
         updatedAt: true,
         isWithdrawalRestricted: true,
+        isCrossLineTransferRestricted: true,
         externalWallets: {
           include: {
             supportedWallet: true, // <-- fetch related wallet type
@@ -235,6 +241,42 @@ export class AdminUsersService {
           actorId: adminId,
           actorType: 'admin',
           action: restrict ? 'RESTRICT_WITHDRAWAL' : 'UNRESTRICT_WITHDRAWAL',
+          entity: 'User',
+          entityId: userId,
+        },
+      });
+    });
+
+    return { ok: true };
+  }
+
+  async restrictUserCrossLineTransfer(
+    adminId: number,
+    userId: number,
+    restrict: boolean,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) throw new BadRequestException('User not found');
+
+    if (user.isCrossLineTransferRestricted === true && restrict) {
+      return { ok: true, message: `Cross Line Transfer already disabled` };
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          isCrossLineTransferRestricted: restrict,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: restrict
+            ? 'DISABLE_CROSS_LINE_TRANSFER'
+            : 'ENABLE_CROSS_LINE_TRANSFER',
           entity: 'User',
           entityId: userId,
         },

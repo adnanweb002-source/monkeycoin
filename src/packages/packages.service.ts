@@ -341,24 +341,28 @@ export class PackagesService {
         const packagePurchaseType = await this.prisma.adminSetting.findUnique({
           where: { key: SETTING_TYPE.PACKAGE_PURCHASE_TYPE },
         });
+        const isDownline = await this.walletService.isInDownline(
+          buyerId,
+          user.id,
+          Infinity,
+        );
+
+        const isUpline = await this.walletService.isInUpline(
+          buyerId,
+          user.id,
+          Infinity,
+        );
         if (packagePurchaseType && packagePurchaseType.value == 'DOWNLINE') {
-          const isDownline = await this.walletService.isInDownline(
-            buyerId,
-            user.id,
-            Infinity,
-          );
-
-          const isUpline = await this.walletService.isInUpline(
-            buyerId,
-            user.id,
-            Infinity,
-          );
-
           if (!isDownline && !isUpline) {
             throw new BadRequestException(
               'Target user is neither in your upline nor in your downline',
             );
           }
+        }
+        if (user.isCrossLineTransferRestricted && !isDownline && !isUpline) {
+          throw new BadRequestException(
+            'Cross Line Fund Transfer is disabled for your account.  Contact support.',
+          );
         }
       }
     }
@@ -537,49 +541,51 @@ export class PackagesService {
           throw new NotFoundException('Sponsor not found');
         }
 
-        const bonus = await this.prisma.adminSetting.findUnique({
-          where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
-        });
-
-        const bonusRate = this.parseRate(bonus?.value);
-
-        const bonusAmt = amt.mul(bonusRate);
-
-        let response: any = null;
-
-        if (bonusAmt.gt(0)) {
-          response = await this.walletService.creditWalletTransaction(tx, {
-            userId: user.sponsorId,
-            walletType: WalletType.I_WALLET,
-            amount: bonusAmt.toString(),
-            txType: TransactionType.REFERRAL_INCOME,
-            purpose: `Referral bonus from ${user.memberId}`,
-            meta: { fromMemberId: user.memberId },
+        if (sponsor.activePackageCount > 0) {
+          const bonus = await this.prisma.adminSetting.findUnique({
+            where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
           });
 
-          const html = EmailTemplates.referralIncome(
-            sponsor.firstName + ' ' + sponsor.lastName,
-            bonusAmt.toFixed(),
-            user.firstName + ' ' + user.lastName,
-            response?.balanceAfter,
-          );
+          const bonusRate = this.parseRate(bonus?.value);
 
-          await this.notificationsService.createNotificationTransaction(
-            tx,
-            user.sponsorId,
-            'Referral Bonus Earned',
-            `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
-            true,
-            html,
-            'New Referral Earnings Credited!',
-            '/income/referral',
-          );
+          const bonusAmt = amt.mul(bonusRate);
+
+          let response: any = null;
+
+          if (bonusAmt.gt(0)) {
+            response = await this.walletService.creditWalletTransaction(tx, {
+              userId: user.sponsorId,
+              walletType: WalletType.I_WALLET,
+              amount: bonusAmt.toString(),
+              txType: TransactionType.REFERRAL_INCOME,
+              purpose: `Referral bonus from ${user.memberId}`,
+              meta: { fromMemberId: user.memberId },
+            });
+
+            const html = EmailTemplates.referralIncome(
+              sponsor.firstName + ' ' + sponsor.lastName,
+              bonusAmt.toFixed(),
+              user.firstName + ' ' + user.lastName,
+              response?.balanceAfter,
+            );
+
+            await this.notificationsService.createNotificationTransaction(
+              tx,
+              user.sponsorId,
+              'Referral Bonus Earned',
+              `You have earned a referral bonus of $${bonusAmt.toFixed()} from ${user.firstName} ${user.lastName}'s package purchase.`,
+              true,
+              html,
+              'New Referral Earnings Credited!',
+              '/income/referral',
+            );
+          }
         }
       }
 
-      const displayStartDate = startDate.toFormat("ccc dd LLLL yyyy ZZZZ");
+      const displayStartDate = startDate.toFormat('ccc dd LLLL yyyy ZZZZ');
 
-      const displayEndDate = endDate.toFormat("ccc dd LLLL yyyy ZZZZ");
+      const displayEndDate = endDate.toFormat('ccc dd LLLL yyyy ZZZZ');
 
       if (buyerId !== user.id) {
         // send notification to buyer

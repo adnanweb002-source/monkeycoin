@@ -26,9 +26,9 @@ export class RankService {
 
     const claims = await this.prisma.rankRewardLog.findMany({
       where: {
-        userId: userId
-      }
-    })
+        userId: userId,
+      },
+    });
 
     if (!user) {
       throw new BadRequestException('User not found');
@@ -42,17 +42,14 @@ export class RankService {
     const right = new Decimal(user.rankRightVolume.toString());
 
     return ranks.map((rank) => {
-
-      const isClaimed = claims.find((claimedRank)=>{
-        claimedRank.rankId == rank.id
-      })
+      const claimed =
+        claims?.some((claimedRank) => claimedRank.rankId === rank.id) ?? false;
 
       const unlocked =
         left.greaterThanOrEqualTo(rank.requiredLeft) &&
         right.greaterThanOrEqualTo(rank.requiredRight);
-
-      const claimed = isClaimed ? true : false;
-      const claimable = unlocked && !claimed
+        
+      const claimable = unlocked && !claimed;
 
       return {
         id: rank.id,

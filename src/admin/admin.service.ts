@@ -45,6 +45,7 @@ export class AdminUsersService {
         updatedAt: true,
         isWithdrawalRestricted: true,
         isCrossLineTransferRestricted: true,
+        activePackageCount: true,
         externalWallets: {
           include: {
             supportedWallet: true, // <-- fetch related wallet type

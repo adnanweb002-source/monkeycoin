@@ -76,6 +76,7 @@ export class BinaryEngineService {
       where: {
         leftBv: { gt: 0 },
         rightBv: { gt: 0 },
+      activePackageCount: {gt: 0}
       },
       select: {
         id: true,

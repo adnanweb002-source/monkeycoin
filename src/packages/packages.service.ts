@@ -388,8 +388,10 @@ export class PackagesService {
     const purchase = this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
       let purpose = '';
-      if (buyerId! == user.id) {
+      if (buyer.id !== user.id) {
         purpose = `${user.memberId} - Package purchase ${pkg.name}`;
+      } else {
+        purpose = `Self - Package purchase ${pkg.name}`;
       }
       for (const p of parts) {
         await this.walletService.debitWalletTransaction(tx, {
@@ -605,7 +607,7 @@ export class PackagesService {
           true,
           html,
           `You purchased ${pkg.name} for ${user.firstName} ${user.lastName}`,
-          '/profile?tab=packages',
+          '/reports/gain-report?type=PACKAGE_PURCHASE',
         );
 
         // send notification to recipient
@@ -623,7 +625,7 @@ export class PackagesService {
           true,
           html2,
           `New Package Added to Your Account`,
-          '/profile?tab=packages',
+          '/reports/gain-report?type=PACKAGE_PURCHASE',
         );
       } else {
         const html = EmailTemplates.packageSelf(
@@ -633,7 +635,7 @@ export class PackagesService {
           'Transaction Id',
           parts.map((p) => `${p.wallet}: $${p.amount}`).join(', '),
           displayStartDate,
-          '/profile?tab=packages',
+          '/reports/gain-report?type=PACKAGE_PURCHASE',
         );
 
         await this.notificationsService.createNotificationTransaction(
@@ -644,7 +646,7 @@ export class PackagesService {
           true,
           html,
           `${pkg.name} purchased successfully`,
-          '/profile?tab=packages',
+          '/reports/gain-report?type=PACKAGE_PURCHASE',
         );
       }
     });

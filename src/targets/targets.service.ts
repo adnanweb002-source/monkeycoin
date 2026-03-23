@@ -106,14 +106,14 @@ export class TargetsService {
 
     if (!target) throw new NotFoundException('Target not found');
 
-    const data = {}
+    const data = {};
 
     return this.prisma.targetAssignment.update({
       where: { id },
       data: {
         multiplier: dto.multiplier,
         targetAmount: new Decimal(dto.targetAmount),
-        salesType: dto.salesType
+        salesType: dto.salesType,
       },
     });
   }
@@ -126,8 +126,28 @@ export class TargetsService {
 
     if (!target) throw new NotFoundException('Target not found');
 
-    return this.prisma.targetAssignment.delete({
-      where: { id },
+    await this.prisma.$transaction(async (tx) => {
+      // Count how many targets this user has
+      const count = await tx.targetAssignment.count({
+        where: {
+          userId: target.userId,
+        },
+      });
+
+      // If this is the ONLY target
+      if (count === 1) {
+        await tx.user.update({
+          where: { id: target.userId },
+          data: {
+            lockWithdrawalsTillTarget: false,
+          },
+        });
+      }
+
+      // Delete the target
+      await tx.targetAssignment.delete({
+        where: { id },
+      });
     });
   }
 
@@ -235,7 +255,7 @@ export class TargetsService {
         investmentMin: {
           lte: dto.packageAmount,
         },
-      }
+      },
     });
 
     if (!pkg) {

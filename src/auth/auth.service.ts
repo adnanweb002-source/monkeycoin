@@ -252,7 +252,7 @@ export class AuthService {
 
     await this.notificationsService.createNotification(
       result.id,
-      'Welcome to Monkey!',
+      'Welcome to Vaultire Infinite!',
       `Your account has been successfully created. Your member ID is ${result.memberId}. Start exploring our platform and enjoy the benefits of being part of the Vaultire community!`,
       true,
       html,

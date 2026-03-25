@@ -22,11 +22,19 @@ export class AdminUsersService {
     private twoFactorService: TwoFactorService,
   ) {}
 
-  async getAllUsers(take: number, skip: number) {
+  async getAllUsers(
+    take: number,
+    skip: number,
+    memberId?: string,
+  ) {
     const users = await this.prisma.user.findMany({
       where: {
         memberId: {
           not: 'COMPANY',
+          ...(memberId && {
+            contains: memberId,
+            mode: 'insensitive',
+          }),
         },
       },
       skip,

@@ -87,10 +87,6 @@ export class RankService {
         throw new BadRequestException('Rank not found');
       }
 
-      if (rank.order !== user.currentRank + 1) {
-        throw new BadRequestException('Rank not available yet');
-      }
-
       const left = new Decimal(user.rankLeftVolume.toString());
       const right = new Decimal(user.rankRightVolume.toString());
 

@@ -31,9 +31,17 @@ export class AdminUsersController {
   constructor(private readonly svc: AdminUsersService) {}
 
   @Get('list')
-  getAllUsers(@Query('take') take: string, @Query('skip') skip: string) {
+  getAllUsers(
+    @Query('take') take: string,
+    @Query('skip') skip: string,
+    @Query('memberId') memberId?: string,
+  ) {
     console.log('take, skip', take, skip);
-    return this.svc.getAllUsers(Number(take), Number(skip));
+    return this.svc.getAllUsers(
+      Number(take),
+      Number(skip),
+      memberId,
+    );
   }
 
   @Patch(':userId/suspend')

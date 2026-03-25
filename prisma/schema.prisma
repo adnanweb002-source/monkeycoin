@@ -369,6 +369,7 @@ model PackagePurchase {
   user    User    @relation("PurchasedUser", fields: [userId], references: [id])
   buyer   User    @relation("BuyerUser", fields: [buyerId], references: [id])
   package Package @relation(fields: [packageId], references: [id])
+  
 
   packageIncomeLog PackageIncomeLog[]
   targetAssignment TargetAssignment[]
@@ -410,13 +411,20 @@ model QueryReply {
   @@map("query_replies")
 }
 
+enum PackageIncomeStatus {
+  PENDING
+  CREDITED
+}
+
 model PackageIncomeLog {
   id              Int      @id @default(autoincrement())
   purchaseId      Int
   creditDate      DateTime
   amount          Decimal
+  status  PackageIncomeStatus @default(CREDITED)
 
   purchase        PackagePurchase @relation(fields: [purchaseId], references: [id])
+  
 
   @@unique([purchaseId, creditDate]) // prevents double credit
   @@map("package_income_logs")

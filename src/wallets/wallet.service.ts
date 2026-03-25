@@ -1573,6 +1573,71 @@ export class WalletService {
       throw new BadRequestException('User not found');
     }
 
+    // ==============================
+    // 👉 PACKAGE PURCHASE FLOW
+    // ==============================
+    if (type === TransactionType.PACKAGE_PURCHASE) {
+      const where: any = {};
+
+      if (self === 'yes') {
+        where.userId = userId;
+        where.buyerId = userId;
+      } else {
+        where.OR = [{ userId: userId }, { buyerId: userId }];
+      }
+
+      if (from || to) {
+        where.createdAt = {};
+
+        if (from) where.createdAt.gte = new Date(from);
+
+        if (to) {
+          const end = new Date(to);
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
+      }
+
+      const purchases = await this.prisma.packagePurchase.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      });
+
+      // 🔁 Map to WalletTransaction-like response
+      const transactions = purchases.map((p) => ({
+        id: p.id,
+        userId: p.userId,
+        walletId: null,
+        type: TransactionType.PACKAGE_PURCHASE,
+        amount: p.amount,
+        direction: 'DEBIT',
+        purpose: 'Package Purchase',
+        balanceAfter: null,
+        txNumber: `PKG-${p.id}`,
+        meta: {
+          purchasedFor: p.userId,
+          purchasedBy: p.buyerId,
+          packageId: p.packageId,
+        },
+        createdAt: p.createdAt,
+      }));
+
+      const total = purchases.reduce((sum, p) => {
+        return sum.plus(p.amount.toString());
+      }, new Decimal(0));
+      const count = await this.prisma.packagePurchase.count({ where });
+      return {
+        total: total.toFixed(),
+        transactions,
+        count: count
+      };
+    }
+
+    // ==============================
+    // 👉 NORMAL WALLET FLOW
+    // ==============================
     const where: any = {
       userId,
       direction: 'CREDIT',
@@ -1580,25 +1645,6 @@ export class WalletService {
         in: [type],
       },
     };
-
-    if (type == TransactionType.PACKAGE_PURCHASE) {
-      where.direction = 'DEBIT';
-      if (self === 'yes') {
-        where.meta = {
-          path: ['purchasedFor'],
-          equals: user.memberId,
-        };
-
-        where.AND = [
-          {
-            meta: {
-              path: ['purchasedBy'],
-              equals: user.memberId,
-            },
-          },
-        ];
-      }
-    }
 
     if (from || to) {
       where.createdAt = {};
@@ -1628,11 +1674,11 @@ export class WalletService {
     const total = agg.reduce((sum, r) => {
       return sum.plus(r._sum.amount?.toString() ?? '0');
     }, new Decimal(0));
-
+    const count = await this.prisma.walletTransaction.count({ where });
     return {
       total: total.toFixed(),
       transactions: txns,
-      count: txns.length,
+      count: count,
     };
   }
 

@@ -6,6 +6,7 @@ import { WalletService } from '../wallets/wallet.service';
 import { Decimal } from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
 import { NotificationsService } from 'src/notifications/notifcations.service';
+import { DateTime } from 'luxon';
 
 @Injectable()
 export class PackagesCronService {
@@ -36,9 +37,15 @@ export class PackagesCronService {
       this.scheduler.deleteCronJob('daily-package-returns-job');
     } catch (_) {}
 
-    const job = new CronJob(cronExpr, async () => {
-      await this.runDailyReturns();
-    }, null, false, "America/Toronto");
+    const job = new CronJob(
+      cronExpr,
+      async () => {
+        await this.runDailyReturns();
+      },
+      null,
+      false,
+      'America/Toronto',
+    );
 
     this.scheduler.addCronJob('daily-package-returns-job', job);
     job.start();
@@ -46,39 +53,59 @@ export class PackagesCronService {
     this.log.log('Daily package returns cron registered at ' + cronExpr);
   }
 
-  async runDailyReturns() {
-    const today = new Date();
+  async creditPendingReturns(today: Date) {
+    const torontoNow = DateTime.now().setZone('America/Toronto');
+    const yesterday = torontoNow.minus({ days: 1 }).startOf('day').toJSDate();
+    yesterday.setDate(today.getDate() - 1);
 
-    // Skip Sat/Sun
-    const day = today.getDay();
-    if (day === 0) {
-      this.log.debug('Sunday — skipping package earnings run');
-      return;
-    }
-
-    // Skip holidays
-    const holiday = await this.prisma.holiday.findFirst({
-      where: { date: today },
+    const logs: any = await this.prisma.packageIncomeLog.findMany({
+      where: {
+        creditDate: yesterday,
+        status: 'PENDING',
+      },
+      include: {
+        purchase: {
+          include: {
+            package: {},
+          },
+        },
+      },
     });
-    if (holiday) {
-      this.log.debug(
-        `Holiday (${holiday.title}) — skipping package earnings run`,
-      );
-      return;
+
+    for (const log of logs) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await this.wallets.creditWallet({
+            userId: log.purchase.userId,
+            walletType: WalletType.M_WALLET,
+            amount: log.amount,
+            txType: TransactionType.ROI_CREDIT,
+            purpose: `Daily return for package ${log.purchase.package.name}`,
+            meta: {
+              date: log.creditDate,
+              packageName: log.purchase.package.name,
+            },
+          });
+
+          await this.notificationsService.createNotification(
+            log.purchase.userId,
+            'Daily Package Return',
+            `Your package ${log.purchase.package.name} generated $${log.amount} yesterday. It has now been credited.`,
+            false,
+          );
+
+          await tx.packageIncomeLog.update({
+            where: { id: log.id },
+            data: { status: 'CREDITED' },
+          });
+        });
+      } catch (err) {
+        this.log.error(`Credit failed log=${log.id}`, err);
+      }
     }
+  }
 
-    // Normalize date (strip time)
-    const creditDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-    );
-
-    this.log.log(
-      'Running daily package credits for ' + creditDate.toDateString(),
-    );
-
-    // Get active packages that have started and not expired
+  async generateTodayReturns(creditDate: Date) {
     const purchases = await this.prisma.packagePurchase.findMany({
       where: {
         status: 'ACTIVE',
@@ -88,59 +115,82 @@ export class PackagesCronService {
       include: { package: true },
     });
 
-    console.log('Found purchases for daily credit:', purchases.length);
-
     for (const p of purchases) {
-      try {
-        // Idempotency — skip if already credited today
-        const exists = await this.prisma.packageIncomeLog.findUnique({
-          where: { purchaseId_creditDate: { purchaseId: p.id, creditDate } },
-        });
-        if (exists) continue;
+      const exists = await this.prisma.packageIncomeLog.findUnique({
+        where: {
+          purchaseId_creditDate: {
+            purchaseId: p.id,
+            creditDate,
+          },
+        },
+      });
 
-        const dailyPct = new Decimal(p.package.dailyReturnPct);
-        const amount = new Decimal(p.amount)
-          .mul(dailyPct)
-          .div(100)
-          .toDecimalPlaces(2);
+      if (exists) continue;
 
-        await this.prisma.$transaction(async (tx) => {
-          // Credit M wallet
-          await this.wallets.creditWallet({
-            userId: p.userId,
-            walletType: WalletType.M_WALLET,
-            amount: amount.toFixed(),
-            txType: TransactionType.ROI_CREDIT,
-            purpose: `Daily return for package ${p.package.name}`,
-            meta: { date: creditDate, packageName: p.package.name },
-          });
+      const dailyPct = new Decimal(p.package.dailyReturnPct);
+      const amount = new Decimal(p.amount)
+        .mul(dailyPct)
+        .div(100)
+        .toDecimalPlaces(2);
 
-          await this.notificationsService.createNotification(
-            p.userId,
-            'Daily Package Return',
-            `Your package ${p.package.name} has generated a daily return of $${amount.toFixed()}. This amount has been credited to your M-Wallet. Keep up the good work!`,
-            false,
-            undefined,
-            undefined,
-            '/income/direct',
-          );
-
-          // Log credit to prevent duplicates
-          await tx.packageIncomeLog.create({
-            data: {
-              purchaseId: p.id,
-              creditDate,
-              amount: amount.toFixed(),
-            },
-          });
-        });
-      } catch (err) {
-        this.log.error(
-          `Package credit failed purchase=${p.id} user=${p.userId}`,
-          err.stack ?? err,
-        );
-      }
+      await this.prisma.packageIncomeLog.create({
+        data: {
+          purchaseId: p.id,
+          creditDate,
+          amount: amount.toFixed(),
+          status: 'PENDING',
+        },
+      });
     }
+  }
+
+  async runDailyReturns() {
+    const torontoNow = DateTime.now().setZone('America/Toronto');
+
+    // Normalize date (strip time)
+    const creditDate = torontoNow.startOf('day').toJSDate();
+
+    // Skip Sun
+    const day = torontoNow.weekday;
+    // 1 = Monday, 7 = Sunday
+    if (day === 7) {
+      this.log.debug(
+        'Sunday — skipping package earnings generation, crediting for Saturday',
+      );
+      await this.creditPendingReturns(creditDate);
+      return;
+    }
+
+    const start = torontoNow.startOf('day').toJSDate();
+    const end = torontoNow.endOf('day').toJSDate();
+
+    // Skip holidays
+    const holiday = await this.prisma.holiday.findFirst({
+      where: {
+        date: {
+          gte: start,
+          lte: end,
+        },
+      },
+    });
+
+    if (holiday) {
+      this.log.debug(
+        `Holiday (${holiday.title}) — skipping package earnings generation run. Crediting for yesterdat`,
+      );
+      await this.creditPendingReturns(creditDate);
+      return;
+    }
+
+    this.log.log(
+      'Running daily package credits for ' + creditDate.toDateString(),
+    );
+
+    // STEP 1: Credit yesterday's ROI
+    await this.creditPendingReturns(creditDate);
+
+    // STEP 2: Generate today's ROI (but DON'T credit)
+    await this.generateTodayReturns(creditDate);
 
     this.log.log('Daily package credit run complete');
   }

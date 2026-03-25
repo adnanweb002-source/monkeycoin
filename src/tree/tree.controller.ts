@@ -43,10 +43,14 @@ export class TreeController {
   async rankDownline(@Req() req) {
     return this.tree.rankDownlineByBV(req.user.id);
   }
-  
+
   @UseGuards(JwtAuthGuard)
   @Get('downline/deposit-funds')
-  async getDownlineDepositFunds(@Req() req, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+  async getDownlineDepositFunds(
+    @Req() req,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
     return this.tree.getDownlineDepositFunds(req.user.id, pageNum, pageSizeNum);
@@ -54,8 +58,25 @@ export class TreeController {
 
   @UseGuards(JwtAuthGuard)
   @Get('search/member')
-  async searchMember(@Query('rootUserId') rootUserId:string, @Query('memberId') memberId: string){
-    const rootUser = parseInt(rootUserId)
-    return this.tree.searchMemberIdInTree(rootUser, memberId)
+  async searchMember(
+    @Query('rootUserId') rootUserId: string,
+    @Query('memberId') memberId: string,
+  ) {
+    const rootUser = parseInt(rootUserId);
+    return this.tree.searchMemberIdInTree(rootUser, memberId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('search/extreme-left')
+  async extremeLeft(@Query('rootUserId') rootUserId: string) {
+    const rootUser = parseInt(rootUserId);
+    return this.tree.getExtremeLeftUser(rootUser);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('search/extreme-right')
+  async extremeRight(@Query('rootUserId') rootUserId: string) {
+    const rootUser = parseInt(rootUserId);
+    return this.tree.getExtremeRightUser(rootUser);
   }
 }

@@ -22,6 +22,8 @@ type DbRow = {
   avatar_id: string;
   current_rank: string;
   total_package_amount: Decimal;
+  totalLeft: number;
+  totalRight: number;
 };
 
 @Injectable()
@@ -32,6 +34,8 @@ export class TreeService {
    * Returns a nested binary tree for userId.
    * - depth: optional maximum depth (1 = only the node, 2 = children, 3 = grandchildren, etc.)
    */
+
+
   async getUserTreeRecursive(userId: number, depth?: number) {
     if (depth !== undefined && (isNaN(depth) || depth < 1)) {
       throw new BadRequestException('depth must be a positive integer');
@@ -114,7 +118,41 @@ package_totals AS (
 -- ✅ Final join
 SELECT 
   s.*,
-  COALESCE(pt.total_package_amount, 0) as total_package_amount
+  COALESCE(pt.total_package_amount, 0) as total_package_amount,
+
+
+  -- 🔴 TOTAL LEFT COUNT
+  (
+    WITH RECURSIVE left_tree AS (
+      SELECT id
+      FROM "users"
+      WHERE parent_id = s.id AND position = 'LEFT'
+
+      UNION ALL
+
+      SELECT u.id
+      FROM "users" u
+      JOIN left_tree lt ON u.parent_id = lt.id
+    )
+    SELECT COUNT(*) FROM left_tree
+  ) as "totalLeft",
+
+  -- 🔵 TOTAL RIGHT COUNT
+  (
+    WITH RECURSIVE right_tree AS (
+      SELECT id
+      FROM "users"
+      WHERE parent_id = s.id AND position = 'RIGHT'
+
+      UNION ALL
+
+      SELECT u.id
+      FROM "users" u
+      JOIN right_tree rt ON u.parent_id = rt.id
+    )
+    SELECT COUNT(*) FROM right_tree
+  ) as "totalRight"
+
 FROM subtree s
 LEFT JOIN package_totals pt ON pt."userId" = s.id;
 `;
@@ -153,6 +191,9 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
 
         left: null,
         right: null,
+
+        totalLeft: Number(r.totalLeft ?? 0),
+        totalRight: Number(r.totalRight ?? 0),
       });
     });
 
@@ -165,7 +206,6 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
       if (node.position === 'RIGHT') parent.right = node;
       else parent.left = node;
     }
-
     const root = map.get(userId);
 
     const convertNode = (n: any) => {
@@ -194,6 +234,8 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
         createdAt: n.createdAt,
         currentRank: n.currentRank,
         totalPackageAmount: n.totalPackageAmount,
+        totalLeft: n.totalLeft || 0,
+        totalRight: n.totalRight || 0,
       };
     };
 
@@ -361,5 +403,48 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
     }
 
     return { userId: result[0].id };
+  }
+
+  async getExtremeLeftUser(rootUserId: number) {
+    const result = await this.prisma.$queryRaw<{ id: number }[]>`
+    WITH RECURSIVE left_chain AS (
+      SELECT id, parent_id
+      FROM "users"
+      WHERE id = ${rootUserId}
+
+      UNION ALL
+
+      SELECT u.id, u.parent_id
+      FROM "users" u
+      JOIN left_chain lc ON u.parent_id = lc.id
+      WHERE u.position = 'LEFT'
+    )
+    SELECT id FROM left_chain
+    ORDER BY id DESC
+    LIMIT 1;
+  `;
+
+    return { userId: result[0]?.id ?? rootUserId };
+  }
+  async getExtremeRightUser(rootUserId: number) {
+    const result = await this.prisma.$queryRaw<{ id: number }[]>`
+    WITH RECURSIVE right_chain AS (
+      SELECT id, parent_id
+      FROM "users"
+      WHERE id = ${rootUserId}
+
+      UNION ALL
+
+      SELECT u.id, u.parent_id
+      FROM "users" u
+      JOIN right_chain rc ON u.parent_id = rc.id
+      WHERE u.position = 'RIGHT'
+    )
+    SELECT id FROM right_chain
+    ORDER BY id DESC
+    LIMIT 1;
+  `;
+
+    return { userId: result[0]?.id ?? rootUserId };
   }
 }

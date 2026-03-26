@@ -235,7 +235,7 @@ export class WalletController {
     if (payment_status === 'finished') {
       await this.svc.creditWallet({
         userId: dep.userId,
-        walletType: WalletType.F_WALLET,
+        walletType: WalletType.D_WALLET,
         amount: actually_paid.toString(),
         txType: TransactionType.DEPOSIT,
         purpose: 'Deposit via NOWPayments',
@@ -260,7 +260,7 @@ export class WalletController {
         if (bonusAmount > 0) {
           await this.svc.creditWallet({
             userId: dep.userId,
-            walletType: WalletType.BONUS_WALLET,
+            walletType: WalletType.A_WALLET,
             amount: bonusAmount.toString(),
             txType: TransactionType.ADMIN_BONUS,
             purpose: `Deposit bonus (${activeBonus.bonusPercentage}%) for deposit`,
@@ -329,6 +329,7 @@ export class WalletController {
       dto.walletType,
       dto.skip ?? 0,
       dto.take ?? 20,
+      dto?.filters ?? {}
     );
   }
 

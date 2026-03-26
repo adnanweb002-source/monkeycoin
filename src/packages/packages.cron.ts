@@ -77,7 +77,7 @@ export class PackagesCronService {
         await this.prisma.$transaction(async (tx) => {
           await this.wallets.creditWallet({
             userId: log.purchase.userId,
-            walletType: WalletType.M_WALLET,
+            walletType: WalletType.E_WALLET,
             amount: log.amount,
             txType: TransactionType.ROI_CREDIT,
             purpose: `Daily return for package ${log.purchase.package.name}`,

@@ -24,7 +24,7 @@ export class PurchasePackageDto {
   @IsObject()
   split: Record<string, number>;
   // example:
-  // { F_WALLET: 40, M_WALLET: 60 }
+  // { D_WALLET: 40, E_WALLET: 60 }
 
   @IsOptional()
   @IsBoolean()

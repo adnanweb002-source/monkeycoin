@@ -71,7 +71,7 @@ export class PackagesService {
       }
     } else {
       // Admin: ensure 100% split from Bonus Wallet
-      const bonusPct = new Decimal(split[WalletType.BONUS_WALLET] ?? 0);
+      const bonusPct = new Decimal(split[WalletType.A_WALLET] ?? 0);
       if (!bonusPct.eq(100)) {
         throw new BadRequestException(
           `Admin purchases must be 100% from Bonus Wallet`,
@@ -556,7 +556,7 @@ export class PackagesService {
           if (bonusAmt.gt(0)) {
             response = await this.walletService.creditWalletTransaction(tx, {
               userId: user.sponsorId,
-              walletType: WalletType.I_WALLET,
+              walletType: WalletType.P_WALLET,
               amount: bonusAmt.toString(),
               txType: TransactionType.REFERRAL_INCOME,
               purpose: `Referral bonus from ${user.memberId}`,

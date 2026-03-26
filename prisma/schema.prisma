@@ -30,10 +30,10 @@ enum Role {
 }
 
 enum WalletType {
-  F_WALLET      // Deposit wallet
-  I_WALLET      // Referral / Binary Income
-  M_WALLET      // ROI income
-  BONUS_WALLET  // Rewards
+  D_WALLET      // Deposit wallet
+  P_WALLET      // Referral / Binary Income
+  E_WALLET      // ROI income
+  A_WALLET  // Rewards
 }
 
 enum TransactionType {
@@ -222,7 +222,7 @@ model Wallet {
 model WalletLimit {
   id               Int         @id @default(autoincrement())
 
-  walletType       WalletType  // F_WALLET, I_WALLET, etc.
+  walletType       WalletType  // D_WALLET, P_WALLET, etc.
 
   minWithdrawal    Decimal     @default(0)   // minimum amount per withdrawal
   maxPerTx         Decimal     @default(0)   // maximum single transaction

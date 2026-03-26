@@ -48,8 +48,8 @@ export class RankService {
       const unlocked =
         left.greaterThanOrEqualTo(rank.requiredLeft) &&
         right.greaterThanOrEqualTo(rank.requiredRight);
-        
-      const claimable = unlocked && !claimed;
+
+      const claimable = unlocked && !claimed && rank.order == user.currentRank + 1
 
       return {
         id: rank.id,
@@ -87,6 +87,10 @@ export class RankService {
         throw new BadRequestException('Rank not found');
       }
 
+      if(rank.order !== user.currentRank + 1){
+          throw new BadRequestException("You have to claim the previous rank(s) in order to claim this rank")
+      }
+
       const left = new Decimal(user.rankLeftVolume.toString());
       const right = new Decimal(user.rankRightVolume.toString());
 
@@ -119,7 +123,7 @@ export class RankService {
       if (rank.rewardAmount) {
         await this.walletService.creditWalletTransaction(tx, {
           userId,
-          walletType: WalletType.BONUS_WALLET,
+          walletType: WalletType.A_WALLET,
           amount: rank.rewardAmount.toString(),
           txType: TransactionType.RANK_REWARD,
           purpose: `Rank Reward: ${rank.name}`,
@@ -136,7 +140,7 @@ export class RankService {
           rankLeftVolume: left.minus(rank.requiredLeft),
           rankRightVolume: right.minus(rank.requiredRight),
           currentRank: {
-            increment: rank.id,
+            increment: rank.order,
           },
         },
       });
@@ -162,6 +166,14 @@ export class RankService {
    * Get rank progress for dashboard
    */
   async getRankProgress(userId: number) {
+    const ranks = await this.prisma.rank.findMany({});
+
+    if (!ranks || ranks.length == 0) {
+      return {
+        completed: false,
+      };
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {

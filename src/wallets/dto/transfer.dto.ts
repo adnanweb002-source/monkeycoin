@@ -10,8 +10,8 @@ export class TransferDto {
   @IsInt()
   fromUserId: number;
 
-  @IsEnum(['F_WALLET', 'I_WALLET', 'M_WALLET', 'BONUS_WALLET'])
-  fromWalletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
+  @IsEnum(['D_WALLET', 'P_WALLET', 'E_WALLET', 'A_WALLET'])
+  fromWalletType: 'D_WALLET' | 'P_WALLET' | 'E_WALLET' | 'A_WALLET';
 
   @IsString()
   @IsNotEmpty()

@@ -173,7 +173,7 @@ export class BinaryEngineService {
       // 1️⃣ Credit M-Wallet
       await this.walletService.creditWallet({
         userId: user.id,
-        walletType: WalletType.I_WALLET,
+        walletType: WalletType.P_WALLET,
         amount: payout.toFixed(),
         txType: TransactionType.BINARY_INCOME,
         purpose: 'Binary Income',

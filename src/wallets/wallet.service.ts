@@ -18,6 +18,7 @@ import { NotificationsService } from 'src/notifications/notifcations.service';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { SETTING_TYPE } from '@prisma/client';
 import { DateTime } from 'luxon';
+
 @Injectable()
 export class WalletService {
   constructor(
@@ -161,10 +162,10 @@ export class WalletService {
     userId: number,
   ) {
     const data = [
-      { userId, type: WalletType.F_WALLET },
-      { userId, type: WalletType.I_WALLET },
-      { userId, type: WalletType.M_WALLET },
-      { userId, type: WalletType.BONUS_WALLET },
+      { userId, type: WalletType.D_WALLET },
+      { userId, type: WalletType.P_WALLET },
+      { userId, type: WalletType.E_WALLET },
+      { userId, type: WalletType.A_WALLET },
     ];
 
     await tx.wallet.createMany({ data, skipDuplicates: true });
@@ -332,7 +333,7 @@ export class WalletService {
   // core: debit wallet (atomic)
   async debitWallet(params: {
     userId: number;
-    walletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
+    walletType: 'D_WALLET' | 'P_WALLET' | 'E_WALLET' | 'A_WALLET';
     amount: string;
     txType: TransactionType;
     purpose?: string;
@@ -413,7 +414,7 @@ export class WalletService {
     tx: Prisma.TransactionClient,
     params: {
       userId: number;
-      walletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
+      walletType: 'D_WALLET' | 'P_WALLET' | 'E_WALLET' | 'A_WALLET';
       amount: string;
       txType: TransactionType;
       purpose?: string;
@@ -501,7 +502,7 @@ export class WalletService {
   // transferMode check: DOWNLINE_ONLY or CROSSLINE
   async transferFunds(params: {
     fromUserId: number;
-    fromWalletType: 'F_WALLET' | 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET';
+    fromWalletType: 'D_WALLET' | 'P_WALLET' | 'E_WALLET' | 'A_WALLET';
     toMemberId: string; // recipient memberId
     amount: string;
     requestedByUserId?: number; // for auth checks
@@ -761,7 +762,7 @@ export class WalletService {
   // Withdraw request: reserve (debit) funds and create pending withdrawal entry
   async createWithdrawRequest(params: {
     userId: number;
-    walletType: 'I_WALLET' | 'M_WALLET' | 'BONUS_WALLET' | 'F_WALLET';
+    walletType: 'P_WALLET' | 'E_WALLET' | 'A_WALLET' | 'D_WALLET';
     amount: string;
     method: string; // e.g., 'USDT_TRX'
     address: string;
@@ -825,7 +826,7 @@ export class WalletService {
         data: { balance: newBalance.toFixed() },
       });
 
-      await tx.walletTransaction.create({
+      const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
           userId: wr.userId,
@@ -861,12 +862,15 @@ export class WalletService {
 
       return {
         withdrawalId: wr.id,
-        balanceAfter: bal.toFixed(),
+        transactionId: transaction.txNumber,
+        balanceAfter: newBalance.toFixed(),
+        balanceBefore: bal.toFixed(),
+        walletType: params.walletType,
       };
     });
   }
 
-  // Handle deposit confirmation (e.g. webhook) -> credit F_WALLET
+  // Handle deposit confirmation (e.g. webhook) -> credit D_WALLET
   async handleDepositConfirmation(params: {
     userId: number;
     amount: string;
@@ -880,7 +884,7 @@ export class WalletService {
 
     const response = await this.creditWallet({
       userId,
-      walletType: 'F_WALLET',
+      walletType: 'D_WALLET',
       amount,
       txType: 'DEPOSIT',
       purpose: 'Crypto deposit confirmed',
@@ -974,7 +978,7 @@ export class WalletService {
       where: {
         userId_type: {
           userId: params.userId,
-          type: WalletType.F_WALLET,
+          type: WalletType.D_WALLET,
         } as any,
       },
     });
@@ -1377,7 +1381,7 @@ export class WalletService {
 
     return this.creditWallet({
       userId: params.userId,
-      walletType: WalletType.BONUS_WALLET,
+      walletType: WalletType.A_WALLET,
       amount: params.amount,
       txType: TransactionType.ADMIN_BONUS,
       purpose: params.reason ?? 'Admin bonus credit',
@@ -1393,15 +1397,57 @@ export class WalletService {
     walletType: WalletType,
     skip = 0,
     take = 20,
+    filters?: {
+      direction?: 'CREDIT' | 'DEBIT';
+      startDate?: Date;
+      endDate?: Date;
+      minAmount?: number;
+      maxAmount?: number;
+      sortBy?: 'createdAt' | 'amount';
+      sortOrder?: 'asc' | 'desc';
+    },
   ) {
     if (userRole !== Role.ADMIN) {
       const wallet = await this.getWallet(userId, walletType);
       if (!wallet) {
         throw new BadRequestException('Wallet not found');
       }
+
+      const where: any = {
+        walletId: wallet.id,
+      };
+
+      if (filters?.direction) {
+        where.direction = filters.direction;
+      }
+
+      if (filters?.startDate || filters?.endDate) {
+        where.createdAt = {};
+        if (filters.startDate) {
+          where.createdAt.gte = filters.startDate;
+        }
+        if (filters.endDate) {
+          where.createdAt.lte = filters.endDate;
+        }
+      }
+
+      if (filters?.minAmount || filters?.maxAmount) {
+        where.amount = {};
+        if (filters.minAmount) {
+          where.amount.gte = filters.minAmount;
+        }
+        if (filters.maxAmount) {
+          where.amount.lte = filters.maxAmount;
+        }
+      }
+
+      const orderBy = {
+        [filters?.sortBy || 'createdAt']: filters?.sortOrder || 'desc',
+      };
+
       const transactions = await this.prisma.walletTransaction.findMany({
-        where: { walletId: wallet.id },
-        orderBy: { createdAt: 'desc' },
+        where,
+        orderBy,
         skip,
         take,
         include: {
@@ -1415,9 +1461,42 @@ export class WalletService {
       if (!wallet) {
         throw new BadRequestException('Wallet not found');
       }
+
+      const where: any = {
+        walletId: wallet.id,
+      };
+
+      if (filters?.direction) {
+        where.direction = filters.direction;
+      }
+
+      if (filters?.startDate || filters?.endDate) {
+        where.createdAt = {};
+        if (filters.startDate) {
+          where.createdAt.gte = filters.startDate;
+        }
+        if (filters.endDate) {
+          where.createdAt.lte = filters.endDate;
+        }
+      }
+
+      if (filters?.minAmount || filters?.maxAmount) {
+        where.amount = {};
+        if (filters.minAmount) {
+          where.amount.gte = filters.minAmount;
+        }
+        if (filters.maxAmount) {
+          where.amount.lte = filters.maxAmount;
+        }
+      }
+
+      const orderBy = {
+        [filters?.sortBy || 'createdAt']: filters?.sortOrder || 'desc',
+      };
+
       const transactions = await this.prisma.walletTransaction.findMany({
-        where: { walletId: wallet.id },
-        orderBy: { createdAt: 'desc' },
+        where,
+        orderBy,
         select: {
           id: true,
           walletId: true,
@@ -1631,7 +1710,7 @@ export class WalletService {
       return {
         total: total.toFixed(),
         transactions,
-        count: count
+        count: count,
       };
     }
 

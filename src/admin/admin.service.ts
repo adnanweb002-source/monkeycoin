@@ -487,9 +487,9 @@ export class AdminUsersService {
         role: u.role,
         status: u.status,
         activePackageCount: u.activePackageCount,
-        mainWallet: walletMap['M_WALLET'] ?? '0',
-        incomeWallet: walletMap['I_WALLET'] ?? '0',
-        bonusWallet: walletMap['BONUS_WALLET'] ?? '0',
+        mainWallet: walletMap['E_WALLET'] ?? '0',
+        incomeWallet: walletMap['P_WALLET'] ?? '0',
+        bonusWallet: walletMap['A_WALLET'] ?? '0',
         withdrawalRestricted: u.isWithdrawalRestricted,
         createdAt: u.createdAt.toISOString(),
       };

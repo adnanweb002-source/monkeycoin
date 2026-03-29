@@ -9,6 +9,7 @@ import { Logger } from '@nestjs/common/services/logger.service';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
+import { DateTime } from 'luxon';
 
 @Injectable()
 export class BinaryEngineService {
@@ -24,7 +25,7 @@ export class BinaryEngineService {
 
   async registerClosingCron() {
     const setting = await this.prisma.adminSetting.findUnique({
-      where: { key: 'BACK_OFFICE_OPENING_TIME' },
+      where: { key: SETTING_TYPE.BACK_OFFICE_OPENING_TIME },
     });
 
     const time = setting?.value ?? '00:00';
@@ -36,9 +37,15 @@ export class BinaryEngineService {
       this.scheduler.deleteCronJob('binary-closing-job');
     } catch (_) {}
 
-    const job = new CronJob(cronExpr, async () => {
-      await this.runDailyBinaryPayout();
-    }, null, false, "America/Toronto");
+    const job = new CronJob(
+      cronExpr,
+      async () => {
+        await this.runDailyBinaryPayout();
+      },
+      null,
+      false,
+      'America/Toronto',
+    );
 
     this.scheduler.addCronJob('binary-closing-job', job);
     job.start();
@@ -50,11 +57,18 @@ export class BinaryEngineService {
     // Determine credit day based on closing time
     const creditDate = await this.resolveCreditDate(runDate);
 
-    const today = new Date();
+    const torontoNow = DateTime.now().setZone('America/Toronto');
 
-    // Skip holidays
+    const start = torontoNow.startOf('day').toJSDate();
+    const end = torontoNow.endOf('day').toJSDate();
+
     const holiday = await this.prisma.holiday.findFirst({
-      where: { date: today },
+      where: {
+        date: {
+          gte: start,
+          lte: end,
+        },
+      },
     });
     if (holiday) {
       this.log.debug(`Holiday (${holiday.title}) — skipping binary payout run`);
@@ -62,8 +76,8 @@ export class BinaryEngineService {
     }
 
     // Skip Sat/Sun
-    const day = today.getDay();
-    if (day === 0 || day === 6) {
+    const day = torontoNow.weekday;
+    if (day === 7) {
       this.log.debug('Weekend — skipping binary payout run');
       return;
     }
@@ -76,7 +90,7 @@ export class BinaryEngineService {
       where: {
         leftBv: { gt: 0 },
         rightBv: { gt: 0 },
-      activePackageCount: {gt: 0}
+        activePackageCount: { gt: 0 },
       },
       select: {
         id: true,
@@ -120,26 +134,32 @@ export class BinaryEngineService {
   /** -------- Resolve credit date using closing time -------- */
   private async resolveCreditDate(input?: Date): Promise<Date> {
     const closing = await this.prisma.adminSetting.findUnique({
-      where: { key: 'BACK_OFFICE_CLOSING_TIME' },
+      where: { key: SETTING_TYPE.BACK_OFFICE_OPENING_TIME },
     });
 
-    const now = input ? new Date(input) : new Date();
-    const date = new Date(now);
-    date.setHours(0, 0, 0, 0);
+    const now = input
+      ? DateTime.fromJSDate(input).setZone('America/Toronto')
+      : DateTime.now().setZone('America/Toronto');
 
-    if (!closing) return date;
+    let businessDate = now.startOf('day');
 
-    // value format expected: "23:59"
+    if (!closing) return businessDate.toJSDate();
+
     const [h, m] = closing.value.split(':').map(Number);
-    const closingToday = new Date(date);
-    closingToday.setHours(h, m, 0, 0);
 
-    // If cron ran BEFORE closing time, treat payout as previous day
+    const closingToday = businessDate.set({
+      hour: h,
+      minute: m,
+      second: 0,
+      millisecond: 0,
+    });
+
+    // If BEFORE closing → treat as previous business day
     if (now < closingToday) {
-      date.setDate(date.getDate() - 1);
+      businessDate = businessDate.minus({ days: 1 });
     }
 
-    return date;
+    return businessDate.toJSDate();
   }
 
   /** -------- Core binary processing per user -------- */
@@ -171,7 +191,7 @@ export class BinaryEngineService {
       const payout = weak.mul(rate);
 
       // 1️⃣ Credit M-Wallet
-      await this.walletService.creditWallet({
+      await this.walletService.creditWalletTransaction(tx, {
         userId: user.id,
         walletType: WalletType.P_WALLET,
         amount: payout.toFixed(),

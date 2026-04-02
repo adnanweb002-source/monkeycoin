@@ -15,6 +15,8 @@ import {
   HttpCode,
   Res,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { clearCsrfCookie, setCsrfCookie } from '../common/csrf-cookie';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -39,6 +41,8 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 3600000 } })
   async register(
     @Body() dto: RegisterDto,
     @Ip() ip: string,
@@ -77,6 +81,8 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    setCsrfCookie(res);
+
     return {
       id,
       memberId,
@@ -92,6 +98,8 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 300000 } })
   async login(
     @Body() dto: LoginDto,
     @Ip() ip: string,
@@ -117,6 +125,8 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    setCsrfCookie(res);
+
     return {
       ok: true,
     };
@@ -124,6 +134,8 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   async refresh(@Req() req, @Res({ passthrough: true }) res) {
     const refreshToken = req.cookies?.refresh_token;
 
@@ -137,7 +149,7 @@ export class AuthController {
     res.cookie('access_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
+      sameSite: 'lax' as const,
       domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
       path: '/',
       maxAge: 55 * 60 * 1000,
@@ -146,16 +158,19 @@ export class AuthController {
     res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
+      sameSite: 'lax' as const,
       domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    setCsrfCookie(res);
+
     return { ok: true };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post('logout')
   async logout(@Request() req, @Res({ passthrough: true }) res) {
     res.clearCookie('access_token', {
@@ -170,6 +185,7 @@ export class AuthController {
       sameSite: 'lax',
       domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
     });
+    clearCsrfCookie(res);
     return {
       ok: true,
     };
@@ -217,13 +233,15 @@ export class AuthController {
   }
 
   // 2FA setup
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 3600000 } })
   @Post('2fa/setup')
   async setup2fa(@Request() req) {
     return this.twoFactorService.generateSetup(req.user.id, req.user.email);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 25, ttl: 900000 } })
   @Post('2fa/verify')
   async verify2fa(
     @Request() req,
@@ -245,7 +263,8 @@ export class AuthController {
   // }
 
   // Admin backdoor: reset 2fa for user (requires admin role) — this is a sample, hook into RBAC
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard, RolesGuard)
+  @Throttle({ default: { limit: 40, ttl: 3600000 } })
   @Roles(Role.ADMIN)
   @Post('admin/users/:id/2fa-reset')
   async adminReset2fa(
@@ -265,7 +284,8 @@ export class AuthController {
   }
 
   // Admin Backdoor Login to User Account
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard, RolesGuard)
+  @Throttle({ default: { limit: 15, ttl: 3600000 } })
   @Roles(Role.ADMIN)
   @Post('admin-login-for-user')
   async adminPasswordLessLogin(
@@ -299,6 +319,8 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    setCsrfCookie(res);
+
     return {
       ok: true,
     };
@@ -311,11 +333,15 @@ export class AuthController {
   }
 
   @Post('/forgot-password')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
   async forgotPassword(@Body('email') email: string, @Ip() ip: string) {
     return this.authService.requestPasswordReset(email, ip);
   }
 
   @Post('/reset-password')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 15, ttl: 3600000 } })
   async resetPassword(
     @Body() dto: ResetPasswordDto,
     @Request() req,
@@ -330,6 +356,8 @@ export class AuthController {
   }
 
   @Post('/request-2fa-reset')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
   async requestTwoFactorReset(
     @Body('email') email: string,
     @Body('memberId') memberId: string,
@@ -340,6 +368,8 @@ export class AuthController {
   }
 
   @Post('/request-2fa-reset-by-admin')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 3600000 } })
   async requestTwoFactorResetByAdmin(
     @Body('email') email: string,
     @Body('memberId') memberId: string,
@@ -352,7 +382,8 @@ export class AuthController {
     return this.twoFactorService.requestAdmin2FaReset(email, memberId, ip);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 3600000 } })
   @Post('2fa/change/initiate')
   async initiate2faChange(@Request() req, @Body('oldCode') oldCode: string) {
     if (!oldCode) {
@@ -362,7 +393,8 @@ export class AuthController {
     return this.twoFactorService.initiateChange(req.user.id, oldCode);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 25, ttl: 900000 } })
   @Post('2fa/change/confirm')
   async confirm2faChange(
     @Request() req,
@@ -418,6 +450,8 @@ export class AuthController {
   }
 
   @Post('/reset-2fa')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 15, ttl: 3600000 } })
   async resetTwoFactor(
     @Body('email') email: string,
     @Body('token') token: string,

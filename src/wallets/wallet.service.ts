@@ -871,32 +871,23 @@ export class WalletService {
   }
 
   // Handle deposit confirmation (e.g. webhook) -> credit D_WALLET
-  async handleDepositConfirmation(params: {
+  async handleDepositConfirmationMail(params: {
     userId: number;
     amount: string;
     externalTxId?: string;
-    meta?: any;
+    balanceAfter: string;
   }) {
-    const { userId, amount, externalTxId, meta } = params;
+    const { userId, amount, externalTxId, balanceAfter } = params;
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-
-    const response = await this.creditWallet({
-      userId,
-      walletType: 'D_WALLET',
-      amount,
-      txType: 'DEPOSIT',
-      purpose: 'Crypto deposit confirmed',
-      meta: { externalTxId, ...meta },
-    });
 
     const html = EmailTemplates.deposit(
       user.firstName + ' ' + user.lastName,
       amount,
       'USD',
       externalTxId || '',
-      response.balanceAfter,
+      balanceAfter,
     );
 
     await this.notificationsService.createNotification(
@@ -908,7 +899,7 @@ export class WalletService {
       'Deposit Successful - Funds Added',
       '/wallet/deposit-history',
     );
-    return response;
+    return { ok: true };
   }
 
   // helper: check if candidateId is in the downline of userId

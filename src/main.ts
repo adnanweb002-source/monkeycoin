@@ -1,27 +1,29 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import { HttpMetricsInterceptor } from './metrics/http-metrics.interceptor';
-
-
+import { ALLOWED_BROWSER_ORIGINS } from './config/allowed-origins';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalInterceptors(new HttpMetricsInterceptor());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(cookieParser());
   app.enableCors({
-  origin: [
-    'https://gogex.xyz',
-    'https://admin.gogex.xyz',
-    'http://localhost:5173',
-    'http://localhost:8080', 
-    'http://localhost:3000',
-  ],
-  credentials: true,
-  methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-  allowedHeaders: 'Content-Type, Authorization',
-});
+    origin: ALLOWED_BROWSER_ORIGINS,
+    credentials: true,
+    methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization, X-CSRF-Token',
+  });
 
 
   // Health check endpoint

@@ -66,22 +66,11 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard)
   @Post('withdraw')
-  async withdraw(@Body() dto: any) {
+  async withdraw(@Req() req, @Body() dto: any) {
+    dto.userId = req.user.id;
     return this.svc.createWithdrawRequest(dto);
   }
 
-  // webhook for deposit confirmations (call by payment gateway)
-  @Post('webhook/deposit')
-  async depositWebhook(@Body() payload: any) {
-    // validate payload signature, etc.
-    const { userId, amount, externalTxId, meta } = payload;
-    return this.svc.handleDepositConfirmation({
-      userId,
-      amount,
-      externalTxId,
-      meta,
-    });
-  }
 
   @UseGuards(JwtAuthGuard)
   @Post('deposit-request')
@@ -191,8 +180,10 @@ export class WalletController {
   }
 
   verifySignature(rawBody: string, headerSig: string) {
-    const secret: string =
-      process.env.NOWPAYMENTS_IPN_SECRET || 'default_secret';
+    const secret = process.env.NOWPAYMENTS_IPN_SECRET;
+    if (!secret?.trim() || !headerSig) {
+      return false;
+    }
     const computed = crypto
       .createHmac('sha512', secret)
       .update(rawBody)
@@ -240,6 +231,15 @@ export class WalletController {
         txType: TransactionType.DEPOSIT,
         purpose: 'Deposit via NOWPayments',
         meta: payload,
+      });
+
+      const wallet = await this.svc.getWallet(dep.userId, WalletType.D_WALLET);
+
+      await this.svc.handleDepositConfirmationMail({
+        userId: dep.userId,
+        amount: actually_paid.toString(),
+        externalTxId: payment_id.toString(),
+        balanceAfter: wallet.balance.toString(),
       });
 
       const today = new Date();

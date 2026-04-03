@@ -11,6 +11,7 @@ import {
   Put,
 } from '@nestjs/common';
 import { UtilityService } from './utility.service';
+import { holidayDateFromInput } from '../common/toronto-time';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -68,7 +69,7 @@ export class UtilityController {
   ) {
     return this.utility.createHoliday({
       ...body,
-      date: new Date(body.date),
+      date: holidayDateFromInput(body.date),
     });
   }
 
@@ -87,7 +88,7 @@ export class UtilityController {
   ) {
     return this.utility.updateHoliday(Number(id), {
       ...body,
-      date: body.date ? new Date(body.date) : undefined,
+      date: body.date ? holidayDateFromInput(body.date) : undefined,
     });
   }
 

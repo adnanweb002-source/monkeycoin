@@ -98,6 +98,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @HttpCode(200)
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 300000 } })
   async login(

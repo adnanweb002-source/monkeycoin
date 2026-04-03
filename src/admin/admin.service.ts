@@ -13,6 +13,10 @@ import { CreateRankDto } from './dto/create-rank.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateDepositBonusDto } from './dto/create-deposit-bonus.dto';
 import { UpdateDepositBonusDto } from './dto/update-deposit-bonus.dto';
+import {
+  parseAdminDateEnd,
+  parseAdminDateStart,
+} from '../common/toronto-time';
 @Injectable()
 export class AdminUsersService {
   constructor(
@@ -602,8 +606,8 @@ export class AdminUsersService {
   }
 
   async createDepositBonus(dto: CreateDepositBonusDto) {
-    const start = new Date(dto.startDate);
-    const end = new Date(dto.endDate);
+    const start = parseAdminDateStart(dto.startDate);
+    const end = parseAdminDateEnd(dto.endDate);
 
     if (start >= end) {
       throw new BadRequestException('startDate must be before endDate');
@@ -650,8 +654,10 @@ export class AdminUsersService {
       throw new NotFoundException('Deposit bonus not found');
     }
 
-    const start = dto.startDate ? new Date(dto.startDate) : bonus.startDate;
-    const end = dto.endDate ? new Date(dto.endDate) : bonus.endDate;
+    const start = dto.startDate
+      ? parseAdminDateStart(dto.startDate)
+      : bonus.startDate;
+    const end = dto.endDate ? parseAdminDateEnd(dto.endDate) : bonus.endDate;
 
     if (start >= end) {
       throw new BadRequestException('startDate must be before endDate');
@@ -675,8 +681,10 @@ export class AdminUsersService {
       where: { id },
       data: {
         bonusPercentage: dto.bonusPercentage,
-        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+        startDate: dto.startDate
+          ? parseAdminDateStart(dto.startDate)
+          : undefined,
+        endDate: dto.endDate ? parseAdminDateEnd(dto.endDate) : undefined,
       },
     });
 

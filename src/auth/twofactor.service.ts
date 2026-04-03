@@ -12,6 +12,11 @@ import { Prisma } from '@prisma/client';
 import * as QRCode from 'qrcode';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
+import {
+  nowInstant,
+  plusMinutesFrom,
+  torontoLocaleTimestamp,
+} from '../common/toronto-time';
 
 @Injectable()
 export class TwoFactorService {
@@ -101,7 +106,7 @@ export class TwoFactorService {
 
     const html = EmailTemplates.g2faEnabled(
       rec.user.firstName + ' ' + rec.user.lastName,
-      new Date().toLocaleString(),
+      torontoLocaleTimestamp(),
       ip,
     );
 
@@ -190,8 +195,7 @@ export class TwoFactorService {
     const rawToken = require('crypto').randomBytes(32).toString('hex');
     const tokenHash = CryptoJS.SHA256(rawToken).toString();
 
-    const expiry = new Date();
-    expiry.setMinutes(expiry.getMinutes() + 30);
+    const expiry = plusMinutesFrom(30);
 
     await this.prisma.twoFactorResetToken.create({
       data: {
@@ -278,7 +282,7 @@ export class TwoFactorService {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    if (record.expiresAt < new Date()) {
+    if (record.expiresAt < nowInstant()) {
       throw new BadRequestException('Reset token expired');
     }
 
@@ -468,7 +472,7 @@ export class TwoFactorService {
       where: { id: requestId },
       data: {
         status,
-        updatedAt: new Date(),
+        updatedAt: nowInstant(),
       },
     });
 

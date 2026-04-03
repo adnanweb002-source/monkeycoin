@@ -7,6 +7,7 @@ import { Decimal } from 'decimal.js';
 import { TransactionType, WalletType } from '@prisma/client';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { DateTime } from 'luxon';
+import { APP_ZONE } from '../common/toronto-time';
 
 @Injectable()
 export class PackagesCronService {
@@ -44,7 +45,7 @@ export class PackagesCronService {
       },
       null,
       false,
-      'America/Toronto',
+      APP_ZONE,
     );
 
     this.scheduler.addCronJob('daily-package-returns-job', job);
@@ -53,10 +54,12 @@ export class PackagesCronService {
     this.log.log('Daily package returns cron registered at ' + cronExpr);
   }
 
-  async creditPendingReturns(today: Date) {
-    const torontoNow = DateTime.now().setZone('America/Toronto');
-    const yesterday = torontoNow.minus({ days: 1 }).startOf('day').toJSDate();
-    yesterday.setDate(today.getDate() - 1);
+  async creditPendingReturns(creditDate: Date) {
+    const yesterday = DateTime.fromJSDate(creditDate)
+      .setZone(APP_ZONE)
+      .startOf('day')
+      .minus({ days: 1 })
+      .toJSDate();
 
     const logs: any = await this.prisma.packageIncomeLog.findMany({
       where: {
@@ -145,7 +148,7 @@ export class PackagesCronService {
   }
 
   async runDailyReturns() {
-    const torontoNow = DateTime.now().setZone('America/Toronto');
+    const torontoNow = DateTime.now().setZone(APP_ZONE);
 
     // Normalize date (strip time)
     const creditDate = torontoNow.startOf('day').toJSDate();

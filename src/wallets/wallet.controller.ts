@@ -24,6 +24,11 @@ import { WalletType, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import crypto from 'crypto';
 import { CreateCryptoDepositDto } from './dto/deposit.dto';
+import {
+  depositBonusActiveWhereToronto,
+  parseQueryDateEnd,
+  parseQueryDateStart,
+} from '../common/toronto-time';
 
 @Controller('wallet')
 export class WalletController {
@@ -242,14 +247,9 @@ export class WalletController {
         balanceAfter: wallet.balance.toString(),
       });
 
-      const today = new Date();
-
-      // Find the active bonus for the current date
+      // Find the active bonus for the current calendar day in Toronto
       const activeBonus = await this.prisma.depositBonus.findFirst({
-        where: {
-          startDate: { lte: today },
-          endDate: { gte: today },
-        },
+        where: depositBonusActiveWhereToronto(),
       });
 
       let bonusAmount = 0;
@@ -389,8 +389,8 @@ export class WalletController {
     return this.svc.getGainReport(
       req.user.id,
       type,
-      from ? new Date(from) : undefined,
-      to ? new Date(to) : undefined,
+      from ? parseQueryDateStart(from) : undefined,
+      to ? parseQueryDateEnd(to) : undefined,
       Number(skip) || 0,
       Number(take) || 20,
       self

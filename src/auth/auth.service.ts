@@ -20,6 +20,12 @@ import * as crypto from 'crypto';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import axios from 'axios';
 import { ProfileChangeDto } from './dto/profile-update-dto';
+import {
+  nowInstant,
+  plusDaysFromNow,
+  plusMinutesFrom,
+  torontoLocaleTimestamp,
+} from '../common/toronto-time';
 
 @Injectable()
 export class AuthService {
@@ -390,8 +396,7 @@ export class AuthService {
     // Hash the refresh token before storing
     const rtHash = await argon2.hash(rt);
 
-    const exp = new Date();
-    exp.setDate(exp.getDate() + 7); // refresh expiry; align with env in production
+    const exp = plusDaysFromNow(7);
 
     await this.prisma.refreshToken.create({
       data: {
@@ -472,8 +477,7 @@ export class AuthService {
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = await argon2.hash(rawToken);
 
-    const expiry = new Date();
-    expiry.setMinutes(expiry.getMinutes() + 30); // 30 min expiry
+    const expiry = plusMinutesFrom(30);
 
     await this.prisma.passwordResetToken.create({
       data: {
@@ -559,7 +563,7 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    if (matchedToken.expiresAt < new Date()) {
+    if (matchedToken.expiresAt < nowInstant()) {
       throw new BadRequestException('Reset token expired');
     }
 
@@ -598,7 +602,7 @@ export class AuthService {
 
     const html = EmailTemplates.passwordChanged(
       user.firstName + ' ' + user.lastName,
-      new Date().toLocaleString(),
+      torontoLocaleTimestamp(),
       ip,
       location,
     );
@@ -660,7 +664,7 @@ export class AuthService {
     const location = await this.getLocation(ip);
     const html = EmailTemplates.passwordChanged(
       user.firstName + ' ' + user.lastName,
-      new Date().toLocaleString(),
+      torontoLocaleTimestamp(),
       ip,
       location,
     );
@@ -721,7 +725,7 @@ export class AuthService {
 
     const html = EmailTemplates.profileUpdated(
       user.firstName + ' ' + user.lastName,
-      new Date().toLocaleString(),
+      torontoLocaleTimestamp(),
       ip,
       before.email,
       dto.newEmail,
@@ -768,7 +772,7 @@ export class AuthService {
 
     const html = EmailTemplates.profileUpdated(
       user.firstName + ' ' + user.lastName,
-      new Date().toLocaleString(),
+      torontoLocaleTimestamp(),
       ip,
       `<img src=${this.cfg.get<string>('FRONTEND_URL')}/src/assets/avatars/${before.avatarId}.png width="140" style="display:block;border:0;">`,
       `<img src=${this.cfg.get<string>('FRONTEND_URL')}/src/assets/avatars/${dto.avatarId}.png width="140" style="display:block;border:0;">`,
@@ -850,7 +854,7 @@ export class AuthService {
 
     const html = EmailTemplates.profileUpdated(
       user.firstName + ' ' + user.lastName,
-      new Date().toLocaleString(),
+      torontoLocaleTimestamp(),
       ip,
       htmlStringBefore,
       htmlStringAfter,

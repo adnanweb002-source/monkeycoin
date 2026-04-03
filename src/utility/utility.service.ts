@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { QueryStatus } from '@prisma/client';
+import { nowInstant } from '../common/toronto-time';
 
 
 @Injectable()
@@ -54,7 +55,7 @@ export class UtilityService {
     // Optionally auto-close query
     await this.prisma.query.update({
       where: { id: queryId },
-      data: { status: 'CLOSED', updatedAt: new Date() },
+      data: { status: 'CLOSED', updatedAt: nowInstant() },
     });
 
     await this.notificationsService.createNotification(

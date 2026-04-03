@@ -175,7 +175,7 @@ export default function (ctx) {
 
   // Full suite only once per k6 scenario (VU 1, iteration 0), and only when enabled.
   const fullSuiteEnabled = (__ENV.K6_FULL_SUITE || 'true') === 'true';
-  if (!(__VU === 1 && __ITER === 0 && fullSuiteEnabled)) return;
+  if (!fullSuiteEnabled) return;
 
   function authHeadersForMode(mode) {
     if (mode === AuthMode.PUBLIC) return {};

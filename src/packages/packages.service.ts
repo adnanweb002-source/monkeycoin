@@ -18,6 +18,7 @@ import { Logger } from '@nestjs/common';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { TargetSalesType } from '@prisma/client';
 import { DateTime } from 'luxon';
+import { APP_ZONE } from '../common/toronto-time';
 @Injectable()
 export class PackagesService {
   private readonly log = new Logger(PackagesService.name);
@@ -408,11 +409,9 @@ export class PackagesService {
         });
       }
 
-      const zone = 'America/Toronto';
-
-      // next-day start
+      // next-day start (business calendar in Toronto)
       let startDate = DateTime.now()
-        .setZone(zone)
+        .setZone(APP_ZONE)
         .plus({ days: 1 })
         .startOf('day');
 

@@ -10,6 +10,7 @@ import { NotificationsService } from 'src/notifications/notifcations.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { DateTime } from 'luxon';
+import { APP_ZONE } from '../common/toronto-time';
 
 @Injectable()
 export class BinaryEngineService {
@@ -44,7 +45,7 @@ export class BinaryEngineService {
       },
       null,
       false,
-      'America/Toronto',
+      APP_ZONE,
     );
 
     this.scheduler.addCronJob('binary-closing-job', job);
@@ -57,7 +58,7 @@ export class BinaryEngineService {
     // Determine credit day based on closing time
     const creditDate = await this.resolveCreditDate(runDate);
 
-    const torontoNow = DateTime.now().setZone('America/Toronto');
+    const torontoNow = DateTime.now().setZone(APP_ZONE);
 
     const start = torontoNow.startOf('day').toJSDate();
     const end = torontoNow.endOf('day').toJSDate();
@@ -138,8 +139,8 @@ export class BinaryEngineService {
     });
 
     const now = input
-      ? DateTime.fromJSDate(input).setZone('America/Toronto')
-      : DateTime.now().setZone('America/Toronto');
+      ? DateTime.fromJSDate(input).setZone(APP_ZONE)
+      : DateTime.now().setZone(APP_ZONE);
 
     let businessDate = now.startOf('day');
 

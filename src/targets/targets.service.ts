@@ -11,6 +11,10 @@ import { PurchasePackageDto } from 'src/packages/dto/purchase-package.dto';
 import { AssignTargetDto } from './dto/assign-target.dto';
 import { Role } from 'src/auth/enums/role.enum';
 import Decimal from 'decimal.js';
+import {
+  parseQueryDateEnd,
+  parseQueryDateStart,
+} from '../common/toronto-time';
 
 @Injectable()
 export class TargetsService {
@@ -54,8 +58,8 @@ export class TargetsService {
 
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      if (startDate) where.createdAt.gte = parseQueryDateStart(startDate);
+      if (endDate) where.createdAt.lte = parseQueryDateEnd(endDate);
     }
 
     const [targets, total] = await this.prisma.$transaction([

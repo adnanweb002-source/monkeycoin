@@ -18,6 +18,7 @@ import { NotificationsService } from 'src/notifications/notifcations.service';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { SETTING_TYPE } from '@prisma/client';
 import { DateTime } from 'luxon';
+import { hoursAgo, nowInstant } from '../common/toronto-time';
 
 @Injectable()
 export class WalletService {
@@ -75,7 +76,7 @@ export class WalletService {
       }
 
       // 4) 24h activity checks
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const since = hoursAgo(24);
 
       const stats = await this.prisma.walletTransaction.aggregate({
         where: {
@@ -1100,7 +1101,7 @@ export class WalletService {
 
       await tx.depositRequest.update({
         where: { id: dr.id },
-        data: { status: 'APPROVED', approvedAt: new Date() },
+        data: { status: 'APPROVED', approvedAt: nowInstant() },
       });
 
       await this.notificationsService.createNotification(
@@ -1128,7 +1129,7 @@ export class WalletService {
       }
       await tx.depositRequest.update({
         where: { id: dr.id },
-        data: { status: 'REJECTED', approvedAt: new Date() },
+        data: { status: 'REJECTED', approvedAt: nowInstant() },
       });
 
       await this.notificationsService.createNotification(
@@ -1176,7 +1177,7 @@ export class WalletService {
         where: { id: wr.id },
         data: {
           status: 'APPROVED',
-          updatedAt: new Date(),
+          updatedAt: nowInstant(),
           adminNote: adminNote,
         },
       });
@@ -1219,7 +1220,7 @@ export class WalletService {
         where: { id: wr.id },
         data: {
           status: 'REJECTED',
-          updatedAt: new Date(),
+          updatedAt: nowInstant(),
           adminNote: adminNote,
         },
       });
@@ -1291,7 +1292,7 @@ export class WalletService {
         where: { id: wr.id },
         data: {
           status: 'CANCELLED',
-          updatedAt: new Date(),
+          updatedAt: nowInstant(),
         },
       });
 
@@ -1658,14 +1659,8 @@ export class WalletService {
 
       if (from || to) {
         where.createdAt = {};
-
-        if (from) where.createdAt.gte = new Date(from);
-
-        if (to) {
-          const end = new Date(to);
-          end.setHours(23, 59, 59, 999);
-          where.createdAt.lte = end;
-        }
+        if (from) where.createdAt.gte = from;
+        if (to) where.createdAt.lte = to;
       }
 
       const purchases = await this.prisma.packagePurchase.findMany({
@@ -1718,14 +1713,8 @@ export class WalletService {
 
     if (from || to) {
       where.createdAt = {};
-
-      if (from) where.createdAt.gte = new Date(from);
-
-      if (to) {
-        const end = new Date(to);
-        end.setHours(23, 59, 59, 999);
-        where.createdAt.lte = end;
-      }
+      if (from) where.createdAt.gte = from;
+      if (to) where.createdAt.lte = to;
     }
 
     const txns = await this.prisma.walletTransaction.findMany({

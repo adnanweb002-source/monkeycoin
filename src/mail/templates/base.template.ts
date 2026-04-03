@@ -38,7 +38,7 @@ ${buttonText}
 <!-- HEADER -->
 <tr>
 <td align="center" style="padding:20px 0;border-bottom:1px solid #eee;">
-<img src="https://gogex.xyz/src/assets/logo-light.png" width="140" style="display:block;border:0;">
+<img src="https://vaultireinfinite.com/src/assets/logo-light.png" width="140" style="display:block;border:0;">
 </td>
 </tr>
 

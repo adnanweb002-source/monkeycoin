@@ -26,7 +26,7 @@ export class NowPaymentsService {
         price_currency: 'USD',
         pay_currency: params.crypto,
         order_id: params.depositId.toString(),
-        ipn_callback_url: `${process.env.BASE_URL}/payments/ipn`,
+        ipn_callback_url: `${process.env.BASE_URL}/wallet/payments/ipn`,
       },
       { headers: { 'x-api-key': this.key } },
     );

@@ -205,7 +205,7 @@ export class WalletController {
       throw new UnauthorizedException('Invalid signature');
 
     const payload = req.body;
-    const { payment_id, payment_status, actually_paid, pay_currency } = payload;
+    const { payment_id, payment_status, actually_paid, pay_currency, price_amount } = payload;
 
     await this.prisma.paymentGatewayLog.create({
       data: { paymentId: payment_id.toString(), payload },
@@ -223,7 +223,7 @@ export class WalletController {
       where: { id: dep.id },
       data: {
         status: payment_status,
-        paidAmount: actually_paid?.toString(),
+        paidAmount: price_amount?.toString(),
         meta: payload,
       },
     });
@@ -232,7 +232,7 @@ export class WalletController {
       await this.svc.creditWallet({
         userId: dep.userId,
         walletType: WalletType.D_WALLET,
-        amount: actually_paid.toString(),
+        amount: price_amount.toString(),
         txType: TransactionType.DEPOSIT,
         purpose: 'Deposit via NOWPayments',
         meta: payload,
@@ -242,7 +242,7 @@ export class WalletController {
 
       await this.svc.handleDepositConfirmationMail({
         userId: dep.userId,
-        amount: actually_paid.toString(),
+        amount: price_amount.toString(),
         externalTxId: payment_id.toString(),
         balanceAfter: wallet.balance.toString(),
       });
@@ -255,7 +255,7 @@ export class WalletController {
       let bonusAmount = 0;
 
       if (activeBonus) {
-        bonusAmount = (actually_paid * activeBonus.bonusPercentage) / 100;
+        bonusAmount = (price_amount * activeBonus.bonusPercentage) / 100;
 
         if (bonusAmount > 0) {
           await this.svc.creditWallet({

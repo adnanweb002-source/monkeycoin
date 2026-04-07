@@ -482,7 +482,9 @@ export class PackagesService {
       // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
-      await this.addBinaryVolume(tx, user.id, bv);
+      if(!dto.isTarget) {
+        await this.addBinaryVolume(tx, user.id, bv);
+      }
 
       if (user.sponsorId) {
         await this.processTargetVolume(
@@ -532,7 +534,7 @@ export class PackagesService {
       });
 
       // ➜ REFERRAL BONUS and PACKAGE COUNT INCREMENT
-      if (user?.sponsorId) {
+      if (user?.sponsorId && !dto.isTarget) {
         const sponsor = await this.prisma.user.findUnique({
           where: { id: user.sponsorId },
         });

@@ -1531,13 +1531,20 @@ export class WalletService {
         },
       });
       const total = await this.prisma.withdrawalRequest.count({ where: { userId, status: status ?? undefined } });
-      requests.forEach(request => {
+      const sumTotal = await this.prisma.withdrawalRequest.aggregate({
+        where: {userId, status: status ?? undefined },
+        _sum: {
+          amount: true,
+        },
+      });
+      const newRequests = requests.forEach(request => {
         request = {
           ...request,
-          total
+          total,
+          sumTotal: sumTotal._sum.amount || 0,
         }
       });
-      return requests;
+      return newRequests;
     } else {
       const requests: any = await this.prisma.withdrawalRequest.findMany({
         where: { status: status ?? undefined },
@@ -1549,13 +1556,20 @@ export class WalletService {
         },
       });
       const total = await this.prisma.withdrawalRequest.count({ where: { status: status ?? undefined } });
-      requests.forEach(request => {
+      const sumTotal = await this.prisma.withdrawalRequest.aggregate({
+        where: {userId, status: status ?? undefined },
+        _sum: {
+          amount: true,
+        },
+      });
+      const newRequests = requests.forEach(request => {
         request = {
           ...request,
-          total
+          total,
+          sumTotal: sumTotal._sum.amount || 0,
         }
       });
-      return { requests };
+      return newRequests
     }
   }
 

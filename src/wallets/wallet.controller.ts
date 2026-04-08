@@ -297,7 +297,7 @@ export class WalletController {
 
     const skip = (pageNum - 1) * pageSize;
 
-    const [data, total] = await this.prisma.$transaction([
+    const [data, total, sumTotal] = await this.prisma.$transaction([
       this.prisma.externalDeposit.findMany({
         where: { userId: req.user.id },
         skip,
@@ -307,12 +307,19 @@ export class WalletController {
       this.prisma.externalDeposit.count({
         where: { userId: req.user.id },
       }),
+      this.prisma.externalDeposit.aggregate({
+        where: { userId: req.user.id, status: 'finished' },
+        _sum: {
+          paidAmount: true,
+        },
+      }),
     ]);
 
     return {
       page: pageNum,
       limit: pageSize,
       total,
+      sumTotal: sumTotal._sum.paidAmount || 0,
       totalPages: Math.ceil(total / pageSize),
       data,
     };

@@ -38,7 +38,7 @@ ${buttonText}
 <!-- HEADER -->
 <tr>
 <td align="center" style="padding:20px 0;border-bottom:1px solid #eee;">
-<img src="https://vaultireinfinite.com/src/assets/logo-light.png" width="140" style="display:block;border:0;">
+<img src="https://vaultireinfinite.com/panel/src/assets/logo-light.png" width="140" style="display:block;border:0;">
 </td>
 </tr>
 
@@ -69,13 +69,13 @@ Vaultire Infinite will never ask for your password or private keys via email.
 
 <table cellpadding="0" cellspacing="0" align="center">
 <tr>
-<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" width="20"></a></td>
+<td><a href="https://www.facebook.com/profile.php?id=61586453837955"><img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" width="20"></a></td>
 <td width="10"></td>
-<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="20"></a></td>
+<td><a href="https://www.instagram.com/vaultireinfinite/"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="20"></a></td>
 <td width="10"></td>
-<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111646.png" width="20"></a></td>
+<td><a href="https://t.me/vaultireinfinite"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111646.png" width="20"></a></td>
 <td width="10"></td>
-<td><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/733/733585.png" width="20"></a></td>
+<td><a href="https://wa.link/8rhovc"><img src="https://cdn-icons-png.flaticon.com/512/733/733585.png" width="20"></a></td>
 </tr>
 </table>
 

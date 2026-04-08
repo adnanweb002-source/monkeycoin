@@ -763,7 +763,7 @@ export class WalletService {
   // Withdraw request: reserve (debit) funds and create pending withdrawal entry
   async createWithdrawRequest(params: {
     userId: number;
-    walletType: 'P_WALLET' | 'E_WALLET' | 'A_WALLET' | 'D_WALLET';
+    walletType: 'P_WALLET' | 'E_WALLET'
     amount: string;
     method: string; // e.g., 'USDT_TRX'
     address: string;
@@ -774,8 +774,8 @@ export class WalletService {
 
     let time = DateTime.now().setZone(zone);
 
-    if (time.weekday == 1) {
-      throw new ForbiddenException('Withdrawals are only allowed on Mondays');
+    if (time.weekday == 1 && walletType === 'E_WALLET') {
+      throw new ForbiddenException('Withdrawals from Earning Wallet are only allowed on Mondays');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -788,9 +788,11 @@ export class WalletService {
     }
 
     if (user.lockWithdrawalsTillTarget) {
-      throw new ForbiddenException(
-        'Please reach your target to place withdrawal requests',
-      );
+      if(walletType === 'E_WALLET') {
+        throw new ForbiddenException(
+          'Please reach your target to place withdrawal requests from Earning Wallet',
+        );
+      }
     }
 
     const amt = new Decimal(amount);

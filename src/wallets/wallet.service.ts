@@ -774,7 +774,7 @@ export class WalletService {
 
     let time = DateTime.now().setZone(zone);
 
-    if (time.weekday == 1 && walletType === 'E_WALLET') {
+    if (time.weekday !== 1 && walletType === 'E_WALLET') {
       throw new ForbiddenException('Withdrawals from Earning Wallet are only allowed on Mondays');
     }
 

@@ -26,7 +26,7 @@ export class WalletService {
     private prisma: PrismaService,
     private nowPayments: NowPaymentsService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   // check if wallet can be debited (Limits)
   async canDebitWallet(params: {
@@ -788,7 +788,7 @@ export class WalletService {
     }
 
     if (user.lockWithdrawalsTillTarget) {
-      if(walletType === 'E_WALLET') {
+      if (walletType === 'E_WALLET') {
         throw new ForbiddenException(
           'Please reach your target to place withdrawal requests from Earning Wallet',
         );
@@ -1521,7 +1521,7 @@ export class WalletService {
     status?: string,
   ) {
     if (role !== Role.ADMIN) {
-      const requests = await this.prisma.withdrawalRequest.findMany({
+      const requests: any = await this.prisma.withdrawalRequest.findMany({
         where: { userId, status: status ?? undefined },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -1530,9 +1530,16 @@ export class WalletService {
           wallet: {},
         },
       });
+      const total = await this.prisma.withdrawalRequest.count({ where: { userId, status: status ?? undefined } });
+      requests.forEach(request => {
+        request = {
+          ...request,
+          total
+        }
+      });
       return requests;
     } else {
-      const requests = await this.prisma.withdrawalRequest.findMany({
+      const requests: any = await this.prisma.withdrawalRequest.findMany({
         where: { status: status ?? undefined },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -1541,7 +1548,14 @@ export class WalletService {
           wallet: {},
         },
       });
-      return requests;
+      const total = await this.prisma.withdrawalRequest.count({ where: { status: status ?? undefined } });
+      requests.forEach(request => {
+        request = {
+          ...request,
+          total
+        }
+      });
+      return { requests };
     }
   }
 

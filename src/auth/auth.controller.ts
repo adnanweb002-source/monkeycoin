@@ -65,7 +65,7 @@ export class AuthController {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax' as const,
       domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : '.gogex.tech',
       path: '/',
@@ -110,7 +110,7 @@ export class AuthController {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax' as const,
       domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : '.gogex.tech',
       path: '/',
@@ -149,7 +149,7 @@ export class AuthController {
     // set new cookies
     res.cookie('acces/s_token', tokens.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax' as const,
       domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : '.gogex.tech',
       path: '/',
@@ -176,13 +176,13 @@ export class AuthController {
   async logout(@Request() req, @Res({ passthrough: true }) res) {
     res.clearCookie('access_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax',
       domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : '.gogex.tech',
     });
     res.clearCookie('refresh_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax',
       domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : '.gogex.tech',
     });
@@ -304,7 +304,7 @@ export class AuthController {
 
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax' as const,
       domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : '.gogex.tech',
       path: '/',

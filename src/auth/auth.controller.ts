@@ -67,7 +67,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
       path: '/',
     };
 
@@ -112,7 +112,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
       path: '/',
     };
 
@@ -147,11 +147,11 @@ export class AuthController {
     const tokens = await this.authService.refresh(refreshToken);
 
     // set new cookies
-    res.cookie('access_token', tokens.accessToken, {
+    res.cookie('acces/s_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
       path: '/',
       maxAge: 55 * 60 * 1000,
     });
@@ -160,7 +160,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -178,13 +178,13 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
     });
     res.clearCookie('refresh_token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
     });
     clearCsrfCookie(res);
     return {
@@ -306,7 +306,7 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
-      domain: process.env.NODE_ENV === 'production' ? '.gogex.xyz' : undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.vaultireinfinite.com' : undefined,
       path: '/',
     };
 

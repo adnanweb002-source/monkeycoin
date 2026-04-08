@@ -253,7 +253,7 @@ export class AuthService {
       result.firstName + ' ' + result.lastName,
       result.memberId,
       dto.password,
-      `${process.env.FRONTEND_URL}/login`,
+      `${process.env.FRONTEND_URL}/signin`,
     );
 
     await this.notificationsService.createNotification(

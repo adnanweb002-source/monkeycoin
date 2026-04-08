@@ -482,7 +482,7 @@ export class PackagesService {
       // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
-      if (!dto.isTarget) {
+      if(!dto.isTarget) {
         await this.addBinaryVolume(tx, user.id, bv);
       }
 

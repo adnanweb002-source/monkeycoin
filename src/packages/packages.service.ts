@@ -409,10 +409,9 @@ export class PackagesService {
         });
       }
 
-      // next-day start (business calendar in Toronto)
+      // same-day start (business calendar in Toronto)
       let startDate = DateTime.now()
         .setZone(APP_ZONE)
-        .plus({ days: 1 })
         .startOf('day');
 
       // If Sunday → move to Monday

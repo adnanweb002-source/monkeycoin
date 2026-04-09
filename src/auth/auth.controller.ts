@@ -38,16 +38,20 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly twoFactorService: TwoFactorService,
-  ) {}
+  ) { }
 
   @Post('register')
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 120, ttl: 3600000 } })
   async register(
     @Body() dto: RegisterDto,
-    @Ip() ip: string,
     @Res({ passthrough: true }) res,
+    @Request() req,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     const {
       id,
       memberId,
@@ -103,9 +107,13 @@ export class AuthController {
   @Throttle({ default: { limit: 20, ttl: 300000 } })
   async login(
     @Body() dto: LoginDto,
-    @Ip() ip: string,
+    @Request() req,
     @Res({ passthrough: true }) res,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     const { accessToken, refreshToken } = await this.authService.login(dto, ip);
 
     const cookieOptions = {
@@ -147,7 +155,7 @@ export class AuthController {
     const tokens = await this.authService.refresh(refreshToken);
 
     // set new cookies
-    res.cookie('acces/s_token', tokens.accessToken, {
+    res.cookie('access_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax' as const,
@@ -197,8 +205,11 @@ export class AuthController {
   async changePassword(
     @Request() req,
     @Body() dto: ChangePasswordDto,
-    @Ip() ip: string,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.authService.changePassword(req.user.id, dto, ip);
   }
 
@@ -247,8 +258,11 @@ export class AuthController {
   async verify2fa(
     @Request() req,
     @Body('code') code: string,
-    @Ip() ip: string,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.twoFactorService.verifyAndEnable(
       req.user.id,
       code,
@@ -271,9 +285,11 @@ export class AuthController {
   async adminReset2fa(
     @Request() req,
     @Param('id') userId: string,
-    @Ip() ip: string,
   ) {
-    // NOTE: enforce admin role in real world (additional guard)
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     if (!req.user || !req.user.role || req.user.role != 'ADMIN') {
       throw new ForbiddenException('Admin role required');
     }
@@ -291,10 +307,13 @@ export class AuthController {
   @Post('admin-login-for-user')
   async adminPasswordLessLogin(
     @Body() dto: PasswordLessLoginDto,
-    @Ip() ip: string,
     @Res({ passthrough: true }) res,
     @Request() req,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     const { accessToken, refreshToken } =
       await this.authService.passwordLessloginForAdminOnly(
         req.user.id,
@@ -336,7 +355,11 @@ export class AuthController {
   @Post('/forgot-password')
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 3600000 } })
-  async forgotPassword(@Body('email') email: string, @Ip() ip: string) {
+  async forgotPassword(@Body('email') email: string, @Request() req) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.authService.requestPasswordReset(email, ip);
   }
 
@@ -346,8 +369,11 @@ export class AuthController {
   async resetPassword(
     @Body() dto: ResetPasswordDto,
     @Request() req,
-    @Ip() ip: string,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.authService.resetPassword(
       dto.email,
       dto.token,
@@ -363,8 +389,11 @@ export class AuthController {
     @Body('email') email: string,
     @Body('memberId') memberId: string,
     @Request() req,
-    @Ip() ip: string,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.twoFactorService.requestReset(email, memberId, ip);
   }
 
@@ -400,8 +429,11 @@ export class AuthController {
   async confirm2faChange(
     @Request() req,
     @Body('newCode') newCode: string,
-    @Ip() ip: string,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     if (!newCode) {
       throw new BadRequestException('New 2FA code is required');
     }
@@ -432,8 +464,11 @@ export class AuthController {
     @Param('id') id: string,
     @Body('status') status: 'APPROVED' | 'REJECTED',
     @Request() req,
-    @Ip() ip: string,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     if (!req.user || req.user.role !== 'ADMIN') {
       throw new ForbiddenException('Admin role required');
     }
@@ -456,9 +491,12 @@ export class AuthController {
   async resetTwoFactor(
     @Body('email') email: string,
     @Body('token') token: string,
-    @Ip() ip: string,
     @Request() req,
   ) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
     return this.twoFactorService.resetTwoFactor(email, token, ip);
   }
 }

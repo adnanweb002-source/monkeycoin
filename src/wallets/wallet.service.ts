@@ -1687,7 +1687,7 @@ export class WalletService {
           where: { sponsorId: userId },
         });
         const downLineUserIds = downLineUsers.map(user => user.id);
-        where.OR = [{ buyerId: downLineUserIds, userId: { not: userId } }, {buyerId: userId}];
+        where.OR = [{ buyerId: {in: downLineUserIds}, userId: { not: userId } }, {buyerId: userId}];
       }
 
       if (from || to) {

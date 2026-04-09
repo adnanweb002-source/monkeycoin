@@ -147,7 +147,7 @@ export class AuthController {
     const tokens = await this.authService.refresh(refreshToken);
 
     // set new cookies
-    res.cookie('acces/s_token', tokens.accessToken, {
+    res.cookie('access_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
       sameSite: 'lax' as const,

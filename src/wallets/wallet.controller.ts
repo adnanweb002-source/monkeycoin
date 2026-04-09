@@ -73,7 +73,11 @@ export class WalletController {
   @Post('withdraw')
   async withdraw(@Req() req, @Body() dto: any) {
     dto.userId = req.user.id;
-    return this.svc.createWithdrawRequest(dto);
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded
+      ? (forwarded as string).split(',')[0]
+      : req.socket.remoteAddress;
+    return this.svc.createWithdrawRequest(dto, ip);
   }
 
 

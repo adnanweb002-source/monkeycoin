@@ -759,7 +759,6 @@ export class WalletService {
       };
     });
   }
-
   // Withdraw request: reserve (debit) funds and create pending withdrawal entry
   async createWithdrawRequest(params: {
     userId: number;
@@ -767,7 +766,7 @@ export class WalletService {
     amount: string;
     method: string; // e.g., 'USDT_TRX'
     address: string;
-  }) {
+  }, ip: string) {
     const { userId, walletType, amount, method, address } = params;
 
     const zone = 'America/Toronto';
@@ -820,6 +819,7 @@ export class WalletService {
           method,
           address,
           status: 'PENDING',
+          ip,
         },
       });
 
@@ -841,6 +841,7 @@ export class WalletService {
           txNumber: generateTxNumber(),
           meta: {
             withdrawalRequestId: wr.id,
+            ip,
           },
         },
       });
@@ -1528,6 +1529,7 @@ export class WalletService {
         take,
         include: {
           wallet: {},
+          user: {},
         },
       });
       const total = await this.prisma.withdrawalRequest.count({ where: { userId, status: status ?? undefined } });
@@ -1551,6 +1553,7 @@ export class WalletService {
         take,
         include: {
           wallet: {},
+          user: {},
         },
       });
       const total = await this.prisma.withdrawalRequest.count({ where: { status: status ?? undefined } });
@@ -1680,7 +1683,11 @@ export class WalletService {
         where.userId = userId;
         where.buyerId = userId;
       } else {
-        where.OR = [{ userId: userId }, { buyerId: userId }];
+        const downLineUsers = await this.prisma.user.findMany({
+          where: { sponsorId: userId },
+        });
+        const downLineUserIds = downLineUsers.map(user => user.id);
+        where.OR = [{ buyerId: downLineUserIds, userId: { not: userId } }, {buyerId: userId}];
       }
 
       if (from || to) {
@@ -1707,6 +1714,7 @@ export class WalletService {
         purpose: 'Package Purchase',
         balanceAfter: null,
         txNumber: `PKG-${p.id}`,
+        walletsUsed: p.splitConfig,
         meta: {
           purchasedFor: p.userId,
           purchasedBy: p.buyerId,

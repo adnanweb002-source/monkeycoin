@@ -32,7 +32,7 @@ export class UtilityController {
   @Roles('ADMIN')
   @UseGuards(JwtAuthGuard, RolesGuard)
   replyQuery(@Param('id') id, @Body() dto, @Req() req) {
-    return this.utility.replyToQueryAdmin(req.user.id, Number(id), dto.message);
+    return this.utility.replyToQueryAdmin(req.user.id, Number(id), dto.message, dto.shouldClose ?? false);
   }
 
   @Get('queries')

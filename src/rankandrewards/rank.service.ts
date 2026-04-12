@@ -135,13 +135,12 @@ export class RankService {
        * Reset rank volumes
        */
       await tx.user.update({
+        
         where: { id: userId },
         data: {
           rankLeftVolume: left.minus(rank.requiredLeft),
           rankRightVolume: right.minus(rank.requiredRight),
-          currentRank: {
-            increment: rank.order,
-          },
+          currentRank: rank.order,
         },
       });
 

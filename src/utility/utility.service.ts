@@ -36,6 +36,26 @@ export class UtilityService {
     return { ok: true, message: 'Query submitted successfully' };
   }
 
+  async replyToQueryUser(userId: number, queryId: number, message: string) {
+    const query = await this.prisma.query.findUnique({
+      where: { id: queryId },
+    });
+    if (!query) throw new NotFoundException('Query not found');
+
+    if (query.userId !== userId) throw new BadRequestException('You are not allowed to reply to this query');
+
+    // Add reply
+    const reply = await this.prisma.queryReply.create({
+      data: {
+        queryId,
+        message,
+        userId: userId,
+      },
+    });
+
+    return reply;
+  }
+
   // 2️⃣ Admin reply to query
   async replyToQueryAdmin(adminId: number, queryId: number, message: string, shouldClose: boolean) {
     const query = await this.prisma.query.findUnique({

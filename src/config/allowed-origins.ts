@@ -6,4 +6,6 @@ export const ALLOWED_BROWSER_ORIGINS: (string | RegExp)[] = [
   'https://gogex.tech',
   'https://www.gogex.tech',
   'https://admin.gogex.tech',
+  'https://pre-flight-check.vaultireinfinite.com',
+  'https://pre-flight-check-admin-x.vaultireinfinite.com'
 ];

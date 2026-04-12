@@ -18,8 +18,12 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { Decimal } from 'decimal.js';
 import { WalletType } from '@prisma/client';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
+import { InvalidateExtra } from '../cache/decorators/invalidate-extra.decorator';
 
 @Controller('packages')
+@CacheNamespace('packages')
 export class PackagesController {
   constructor(private service: PackagesService) {}
 
@@ -41,6 +45,7 @@ export class PackagesController {
 
   // -------- USER: LIST ACTIVE PACKAGES --------
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 60, namespace: 'packages', scope: 'global' })
   @Get()
   listActive() {
     return this.service.listActivePackages();
@@ -48,6 +53,7 @@ export class PackagesController {
 
   // -------- USER: PURCHASE PACKAGE --------
   @UseGuards(JwtAuthGuard)
+  @InvalidateExtra({ namespaces: ['wallet', 'tree'] })
   @Post('purchase')
   purchase(@Req() req, @Body() dto: PurchasePackageDto) {
     return this.service.purchasePackage(req.user.id, req.user.role, dto);
@@ -55,6 +61,7 @@ export class PackagesController {
 
   // -------- USER: MY PACKAGES --------
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'packages', scope: 'user' })
   @Get('my')
   myPackages(@Req() req) {
     return this.service.listUserPackages(req.user.id);
@@ -62,6 +69,7 @@ export class PackagesController {
 
   // -------- USER: MY PACKAGES --------
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 120, namespace: 'packages', scope: 'global' })
   @Get('wallet-rules')
   getWalletRules(@Req() req) {
     return this.service.getPackageWalletRules();

@@ -18,11 +18,15 @@ import { Role } from '@prisma/client';
 import { UpdateTargetDto } from './dto/update-target.dto';
 import { TargetsQueryDto } from './dto/targets-query.dto';
 import { AssignTargetDto } from './dto/assign-target.dto';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
 
 @Controller('targets')
+@CacheNamespace('targets')
 export class TargetsController {
   constructor(private readonly targetsService: TargetsService) {}
 
+  @Cacheable({ ttlSeconds: 30, namespace: 'targets', scope: 'user' })
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
@@ -53,6 +57,7 @@ export class TargetsController {
   }
 
   // ADMIN - stats
+  @Cacheable({ ttlSeconds: 45, namespace: 'targets', scope: 'user' })
   @Get('stats')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
@@ -60,6 +65,7 @@ export class TargetsController {
     return this.targetsService.getTargetStats();
   }
 
+  @Cacheable({ ttlSeconds: 45, namespace: 'targets', scope: 'user' })
   @Get('/business-volume')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
@@ -69,6 +75,7 @@ export class TargetsController {
 
   // USER — list own targets
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'targets', scope: 'user' })
   @Get('/my')
   listUserTargets(@Req() req) {
     return this.targetsService.listUserTargets(req.user.id);

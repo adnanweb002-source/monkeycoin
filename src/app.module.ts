@@ -14,10 +14,12 @@ import { MetricsModule } from './metrics/metrics.module';
 import { RankModule } from './rankandrewards/ranks.module';
 import { TargetsModule } from './targets/targets.module';
 import { CsrfMiddleware } from './common/csrf.middleware';
+import { RedisCacheModule } from './cache/redis-cache.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    RedisCacheModule,
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: 60000, limit: 300 }],
     }),

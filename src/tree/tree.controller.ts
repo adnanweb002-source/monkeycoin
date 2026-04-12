@@ -10,11 +10,15 @@ import {
 import { TreeService } from './tree.service';
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
 
 @Controller('tree')
+@CacheNamespace('tree')
 export class TreeController {
   constructor(private readonly tree: TreeService) {}
 
+  @Cacheable({ ttlSeconds: 45, namespace: 'tree', scope: 'global' })
   @Get('user/:id')
   async getUserTree(
     @Param('id', ParseIntPipe) id: number,
@@ -26,6 +30,7 @@ export class TreeController {
     return data;
   }
 
+  @Cacheable({ ttlSeconds: 30, namespace: 'tree', scope: 'user' })
   @Get('downline/recent')
   @UseGuards(JwtAuthGuard)
   async getRecentDownline(@Req() req, @Query('limit') limit?: string) {
@@ -33,18 +38,21 @@ export class TreeController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 45, namespace: 'tree', scope: 'user' })
   @Get('referrals')
   async referrals(@Req() req) {
     return this.tree.getReferralTracking(req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 45, namespace: 'tree', scope: 'user' })
   @Get('downline/rank')
   async rankDownline(@Req() req) {
     return this.tree.rankDownlineByBV(req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'tree', scope: 'user' })
   @Get('downline/deposit-funds')
   async getDownlineDepositFunds(
     @Req() req,
@@ -57,6 +65,7 @@ export class TreeController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 20, namespace: 'tree', scope: 'user' })
   @Get('search/member')
   async searchMember(
     @Query('rootUserId') rootUserId: string,
@@ -67,6 +76,7 @@ export class TreeController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 20, namespace: 'tree', scope: 'user' })
   @Get('search/extreme-left')
   async extremeLeft(@Query('rootUserId') rootUserId: string) {
     const rootUser = parseInt(rootUserId);
@@ -74,6 +84,7 @@ export class TreeController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 20, namespace: 'tree', scope: 'user' })
   @Get('search/extreme-right')
   async extremeRight(@Query('rootUserId') rootUserId: string) {
     const rootUser = parseInt(rootUserId);

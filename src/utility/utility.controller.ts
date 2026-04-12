@@ -35,6 +35,12 @@ export class UtilityController {
     return this.utility.replyToQueryAdmin(req.user.id, Number(id), dto.message, dto.shouldClose ?? false);
   }
 
+  @Post('queries/:id/reply/user')
+  @UseGuards(JwtAuthGuard)
+  replyQueryUser(@Param('id') id, @Body() dto, @Req() req) {
+    return this.utility.replyToQueryUser(req.user.id, Number(id), dto.message);
+  }
+
   @Get('queries')
   @UseGuards(JwtAuthGuard)
   getUserQueries(@Req() req, @Query('skip') skip, @Query('take') take) {

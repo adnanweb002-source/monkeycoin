@@ -14,7 +14,7 @@ export class UtilityService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   // 1️⃣ Submit a query (User)
   async submitQuery(userId: number, message: string) {
@@ -37,7 +37,7 @@ export class UtilityService {
   }
 
   // 2️⃣ Admin reply to query
-  async replyToQueryAdmin(adminId: number, queryId: number, message: string) {
+  async replyToQueryAdmin(adminId: number, queryId: number, message: string, shouldClose: boolean) {
     const query = await this.prisma.query.findUnique({
       where: { id: queryId },
     });
@@ -52,16 +52,23 @@ export class UtilityService {
       },
     });
 
-    // Optionally auto-close query
-    await this.prisma.query.update({
-      where: { id: queryId },
-      data: { status: 'CLOSED', updatedAt: nowInstant() },
-    });
+    if (shouldClose) {
+      await this.prisma.query.update({
+        where: { id: queryId },
+        data: { status: 'CLOSED', updatedAt: nowInstant() },
+      });
+    }
+
+    let notification = `Your query has been answered by our support team. Please check the response and let us know if you have any further questions.`;
+
+    if (shouldClose) {
+      notification = `Your query has been answered and closed by our support team. Please check the response and let us know if you have any further questions.`;
+    }
 
     await this.notificationsService.createNotification(
       query.userId,
       'Query Answered',
-      'Your query has been answered by our support team. Please check the response and let us know if you have any further questions.',
+      message,
       false,
       undefined,
       undefined,

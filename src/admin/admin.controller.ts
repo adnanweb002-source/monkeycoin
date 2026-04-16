@@ -169,6 +169,13 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Post('seed-power-accounts')
+  seedPowerAccounts() {
+    return this.adminService.seedPowerAccounts();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post('create-rank')
   createRank(@Body() dto: CreateRankDto) {
     return this.adminService.createRank(dto);

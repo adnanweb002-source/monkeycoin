@@ -143,7 +143,7 @@ model TwoFactorSecret {
   createdAt  DateTime @default(now()) @map("created_at")
   enabled    Boolean  @default(false)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("two_factor_secrets")
 }
@@ -162,7 +162,7 @@ model RefreshToken {
   createdAt  DateTime @default(now())
   expiresAt  DateTime
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
@@ -210,7 +210,7 @@ model Wallet {
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
-  user         User              @relation(fields: [userId], references: [id])
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
   depositRequests DepositRequest[]
@@ -259,7 +259,7 @@ model WalletTransaction {
   createdAt     DateTime        @default(now()) @map("created_at")
 
   wallet Wallet @relation(fields: [walletId], references: [id])
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([walletId])
@@ -279,7 +279,7 @@ model WithdrawalRequest {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   wallet Wallet @relation(fields: [walletId], references: [id])
 
   @@map("withdrawal_requests")
@@ -296,7 +296,7 @@ model DepositRequest {
   createdAt   DateTime  @default(now())
   approvedAt  DateTime?
 
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   wallet Wallet @relation(fields: [walletId], references: [id])
 
   @@index([userId])
@@ -317,7 +317,7 @@ model ExternalDeposit {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PaymentGatewayLog {
@@ -367,7 +367,7 @@ model PackagePurchase {
 
   isTarget        Boolean  @default(false)
 
-  user    User    @relation("PurchasedUser", fields: [userId], references: [id])
+  user    User    @relation("PurchasedUser", fields: [userId], references: [id], onDelete: Cascade)
   buyer   User    @relation("BuyerUser", fields: [buyerId], references: [id])
   package Package @relation(fields: [packageId], references: [id])
   
@@ -392,7 +392,7 @@ model Query {
   status   QueryStatus  @default(OPEN)
   createdAt DateTime @default(now()) 
   updatedAt DateTime @default(now())
-  user     User         @relation(fields: [userId], references: [id])
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   replies  QueryReply[]
 
   @@map("queries")
@@ -407,7 +407,7 @@ model QueryReply {
   createdAt DateTime @default(now())
 
   query     Query    @relation(fields: [queryId], references: [id])
-  user      User?    @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("query_replies")
 }
@@ -465,7 +465,7 @@ model UserWallet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user            User            @relation(fields: [userId], references: [id])
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   supportedWallet SupportedWallet @relation(fields: [supportedWalletId], references: [id])
 
   @@unique([userId, supportedWalletId])
@@ -493,7 +493,7 @@ model BinaryPayoutLog {
   rightBefore Decimal
   date      DateTime // payout date (midnight)
   createdAt DateTime @default(now())
-  user      User @relation(fields: [userId], references: [id])
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
 }
@@ -527,7 +527,7 @@ model Notification {
   createdAt   DateTime @default(now())
   isRead     Boolean    @default(false)
   redirectionRoute  String  @default("")
-  user     User         @relation(fields: [userId], references: [id])
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PasswordResetToken {
@@ -537,7 +537,7 @@ model PasswordResetToken {
   expiresAt DateTime
   used      Boolean  @default(false)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -551,7 +551,7 @@ model TwoFactorResetToken {
   expiresAt DateTime
   used      Boolean  @default(false)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -586,7 +586,7 @@ model RankRewardLog {
 
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   rank      Rank     @relation(fields: [rankId], references: [id])
 
   @@unique([userId, rankId])
@@ -626,7 +626,7 @@ model TargetAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields:[userId], references:[id])
+  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
   purchase PackagePurchase @relation(fields:[purchaseId], references:[id])
 
   @@index([userId, completed, salesType])

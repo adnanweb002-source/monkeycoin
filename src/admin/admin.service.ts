@@ -4,7 +4,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { Status, SETTING_TYPE } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { Position, Status, SETTING_TYPE } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
 import { AuthService } from 'src/auth/auth.service';
@@ -17,6 +18,7 @@ import {
   parseAdminDateEnd,
   parseAdminDateStart,
 } from '../common/toronto-time';
+
 @Injectable()
 export class AdminUsersService {
   constructor(
@@ -24,7 +26,7 @@ export class AdminUsersService {
     private walletService: WalletService,
     private authService: AuthService,
     private twoFactorService: TwoFactorService,
-  ) {}
+  ) { }
 
   async getAllUsers(
     take: number,
@@ -383,10 +385,12 @@ export class AdminUsersService {
 
       // 1️⃣ Delete dependent tables first
       await tx.packageIncomeLog.deleteMany({});
+      await tx.targetAssignment.deleteMany({});
       await tx.packagePurchase.deleteMany({});
       await tx.walletTransaction.deleteMany({});
       await tx.withdrawalRequest.deleteMany({});
       await tx.depositRequest.deleteMany({});
+      await tx.externalDeposit.deleteMany({});
       await tx.wallet.deleteMany({
         where: { userId: { not: company?.id ?? -1 } },
       });
@@ -463,6 +467,222 @@ export class AdminUsersService {
     ];
 
     return csvRows.join('\n');
+  }
+
+  private async generateUniqueMemberId(): Promise<string> {
+    while (true) {
+      const memberId = `V${Math.floor(10000000 + Math.random() * 90000000)}`;
+      const existing = await this.prisma.user.findUnique({
+        where: { memberId },
+        select: { id: true },
+      });
+
+      if (!existing) return memberId;
+    }
+  }
+
+  private async findAvailablePlacementOnSide(
+    startParentId: number,
+    side: Position,
+  ) {
+    let currentParentId = startParentId;
+
+    while (true) {
+      const existing = await this.prisma.user.findFirst({
+        where: {
+          parentId: currentParentId,
+          position: side,
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return { parentId: currentParentId, position: side };
+      }
+
+      currentParentId = existing.id;
+    }
+  }
+
+  private async createTemporaryUser(params: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    sponsorId: number;
+    parentId: number;
+    position: Position;
+  }) {
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      sponsorId,
+      parentId,
+      position,
+    } = params;
+    const passwordHash = await argon2.hash(password);
+    const memberId = await this.generateUniqueMemberId();
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          memberId,
+          firstName,
+          lastName,
+          email,
+          phoneNumber: '',
+          country: '',
+          passwordHash,
+          sponsorId,
+          parentId,
+          position,
+          status: Status.ACTIVE,
+          g2faSecret: '',
+          isG2faEnabled: false,
+        },
+      });
+
+      await this.walletService.createWalletsForUser(tx, createdUser.id);
+
+      return createdUser;
+    });
+
+    return {
+      id: user.id,
+      memberId: user.memberId,
+      email: user.email,
+      password,
+    };
+  }
+
+  private buildRandomSubAccountEmail(powerIndex: number, subIndex: number) {
+    const token = randomUUID().replace(/-/g, '').slice(0, 10);
+    return `subaccount-poweraccount${powerIndex}${subIndex}-${token}@gmail.com`;
+  }
+
+  async seedPowerAccounts() {
+    const company = await this.prisma.user.findFirst({
+      where: { memberId: 'COMPANY' },
+      select: { id: true },
+    });
+
+    if (!company) {
+      throw new BadRequestException('Company account not found.');
+    }
+
+    const rows: Record<string, string>[] = [];
+    const powerAccounts: {
+      index: number;
+      id: number;
+      memberId: string;
+      email: string;
+      password: string;
+    }[] = [];
+
+    // Create exactly 15 power accounts on the RIGHT side chain from COMPANY.
+    for (let powerIndex = 1; powerIndex <= 15; powerIndex++) {
+      const email = `vaultireinfinite1+power${powerIndex}@gmail.com`;
+      const alreadyExists = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (alreadyExists) {
+        throw new BadRequestException(
+          `Power account email already exists: ${email}. Please prune first or use a fresh environment.`,
+        );
+      }
+
+      const password = `PowerAccount${powerIndex}-1234#`;
+      const placement = await this.findAvailablePlacementOnSide(
+        company.id,
+        Position.RIGHT,
+      );
+
+      const powerUser = await this.createTemporaryUser({
+        email,
+        password,
+        firstName: 'Power',
+        lastName: `Account ${powerIndex}`,
+        sponsorId: company.id,
+        parentId: placement.parentId,
+        position: placement.position,
+      });
+
+      powerAccounts.push({
+        index: powerIndex,
+        id: powerUser.id,
+        memberId: powerUser.memberId,
+        email: powerUser.email,
+        password,
+      });
+    }
+
+    // For each power account (as sponsor), create exactly 100 LEFT-side accounts.
+    for (const power of powerAccounts) {
+      const sheetName = `poweraccount${power.index}`;
+
+      // top row for each "sheet": power account credentials
+      rows.push({
+        sheetName,
+        rowType: 'POWER_ACCOUNT',
+        sponsorMemberId: power.memberId,
+        sponsorPassword: power.password,
+        memberId: power.memberId,
+        password: power.password,
+        email: power.email,
+      });
+
+      // optional spacer/header row for easier frontend grouping/rendering
+      rows.push({
+        sheetName,
+        rowType: 'SUB_ACCOUNTS_HEADER',
+        sponsorMemberId: power.memberId,
+        sponsorPassword: power.password,
+        memberId: 'memberId',
+        password: 'password',
+        email: 'email',
+      });
+
+      for (let subIndex = 1; subIndex <= 100; subIndex++) {
+        const subEmail = this.buildRandomSubAccountEmail(power.index, subIndex);
+
+        const subPassword = `SubAccount-${power.index}-${subIndex}-1234#`;
+        const placement = await this.findAvailablePlacementOnSide(
+          power.id,
+          Position.LEFT,
+        );
+
+        const subUser = await this.createTemporaryUser({
+          email: subEmail,
+          password: subPassword,
+          firstName: 'Sub',
+          lastName: `Power ${power.index}-${subIndex}`,
+          sponsorId: power.id,
+          parentId: placement.parentId,
+          position: placement.position,
+        });
+
+        rows.push({
+          sheetName,
+          rowType: 'SUB_ACCOUNT',
+          sponsorMemberId: power.memberId,
+          sponsorPassword: power.password,
+          memberId: subUser.memberId,
+          password: subPassword,
+          email: subUser.email,
+        });
+      }
+    }
+
+    return {
+      fileName: `power-accounts-${Date.now()}.csv`,
+      rows,
+      csv: this.convertToCSV(rows),
+      totalPowerAccountsCreated: powerAccounts.length,
+      totalSubAccountsCreated: powerAccounts.length * 100,
+    };
   }
 
   async exportAllUserData() {

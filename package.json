@@ -48,6 +48,7 @@
     "ioredis": "^5.10.0",
     "luxon": "^3.7.2",
     "nodemailer": "^8.0.1",
+    "p-limit": "^7.3.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",

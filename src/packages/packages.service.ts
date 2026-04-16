@@ -213,26 +213,26 @@ export class PackagesService {
     // get the buyer
     let current = await tx.user.findUnique({
       where: { id: userId },
-      select: { sponsorId: true, position: true },
+      select: { sponsorId: true, position: true, parentId: true},
     });
 
-    while (current?.sponsorId) {
-      const sponsor = await tx.user.findUnique({
-        where: { id: current.sponsorId },
+    while (current?.parentId) {
+      const parent = await tx.user.findUnique({
+        where: { id: current.parentId },
         select: {
           id: true,
           position: true,
         },
       });
 
-      if (!sponsor) break;
+      if (!parent) break;
 
       const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
       const rankField =
         current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
 
       await tx.user.update({
-        where: { id: sponsor.id },
+        where: { id: parent.id },
         data: {
           [field]: { increment: bv.toNumber() },
           [rankField]: { increment: bv.toNumber() },
@@ -242,13 +242,13 @@ export class PackagesService {
       // trigger target engine
       await this.processTargetVolume(
         tx,
-        sponsor.id,
+        parent.id,
         bv,
         TargetSalesType.INDIRECT,
       );
 
       await this.notificationsService.createNotification(
-        sponsor.id,
+        parent.id,
         'Binary Volume Update',
         `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume increased by ${bv.toFixed()}.`,
         false,
@@ -258,8 +258,8 @@ export class PackagesService {
       );
 
       current = await tx.user.findUnique({
-        where: { id: sponsor.id },
-        select: { sponsorId: true, position: true },
+        where: { id: parent.id },
+        select: { sponsorId: true, position: true, parentId: true},
       });
     }
   }

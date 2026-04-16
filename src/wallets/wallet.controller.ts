@@ -29,8 +29,12 @@ import {
   parseQueryDateEnd,
   parseQueryDateStart,
 } from '../common/toronto-time';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
+import { SkipCacheInvalidation } from '../cache/decorators/skip-cache-invalidation.decorator';
 
 @Controller('wallet')
+@CacheNamespace('wallet')
 export class WalletController {
   constructor(
     private svc: WalletService,
@@ -38,6 +42,7 @@ export class WalletController {
   ) {}
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 15, namespace: 'wallet', scope: 'user' })
   @Get('user-wallets')
   async getUserWallets(@Req() req) {
     return this.svc.getUserWallets(req.user.id);
@@ -157,6 +162,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 15, namespace: 'wallet', scope: 'user' })
   @Get('withdraw-requests')
   async getWithdrawalRequests(
     @Req() req,
@@ -174,6 +180,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @SkipCacheInvalidation()
   @Post('deposit-requests')
   async getDepositRequests(
     @Req() req,
@@ -284,12 +291,14 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 5, namespace: 'wallet', scope: 'user' })
   @Get('deposit-status/:id')
   async getDepositStatus(@Param('id') id: string, @Req() req) {
     return this.svc.getDepositStatus(Number(id), req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 20, namespace: 'wallet', scope: 'user' })
   @Get('deposit/history')
   async getMyDeposits(
     @Req() req,
@@ -330,6 +339,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @SkipCacheInvalidation()
   @Post('transactions')
   async getTransactions(@Req() req, @Body() body: any) {
     const dto = body.data ?? body;
@@ -345,6 +355,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'wallet', scope: 'user' })
   @Get('income/binary')
   async getBinaryIncome(
     @Req() req,
@@ -359,6 +370,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'wallet', scope: 'user' })
   @Get('income/direct')
   async getDirectIncome(
     @Req() req,
@@ -373,6 +385,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'wallet', scope: 'user' })
   @Get('income/referral')
   async getReferralIncome(
     @Req() req,
@@ -387,6 +400,7 @@ export class WalletController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 45, namespace: 'wallet', scope: 'user' })
   @Get('income/gain-report')
   async gainReport(
     @Req() req,
@@ -444,6 +458,7 @@ export class WalletController {
 
   // ---- LIST MY WALLETS ----
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 60, namespace: 'wallet', scope: 'user' })
   @Get('my-external-wallets')
   async listMyWallets(@Req() req) {
     return this.svc.listUserWallets(req.user.id);
@@ -451,6 +466,7 @@ export class WalletController {
 
   // ---- ADMIN: LIST SUPPORTED WALLET TYPES ----
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 300, namespace: 'wallet', scope: 'global' })
   @Get('admin/supported-wallet-types')
   async listSupportedWallets() {
     return this.svc.listSupportedWallets();
@@ -514,6 +530,7 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Cacheable({ ttlSeconds: 15, namespace: 'wallet', scope: 'user' })
   @Get('admin/deposits')
   async listAllDeposits(
     @Query('page') page: string = '1',
@@ -543,6 +560,7 @@ export class WalletController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Cacheable({ ttlSeconds: 30, namespace: 'wallet', scope: 'user' })
   @Get('admin/deposits/:id')
   getDeposit(@Param('id') id: string) {
     return this.prisma.externalDeposit.findUnique({

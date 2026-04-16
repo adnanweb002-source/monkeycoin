@@ -27,7 +27,7 @@ export class PackagesService {
     private walletService: WalletService,
     private treeService: TreeService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   async upsertPackageWalletRule(wallet: WalletType, minPct: Decimal) {
     return this.prisma.packageWalletConfig.upsert({

@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { Status, SETTING_TYPE } from '@prisma/client';
+import { Position, Status, SETTING_TYPE } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
 import { AuthService } from 'src/auth/auth.service';
@@ -463,6 +463,204 @@ export class AdminUsersService {
     ];
 
     return csvRows.join('\n');
+  }
+
+  private async generateUniqueMemberId(): Promise<string> {
+    while (true) {
+      const memberId = `V${Math.floor(10000000 + Math.random() * 90000000)}`;
+      const existing = await this.prisma.user.findUnique({
+        where: { memberId },
+        select: { id: true },
+      });
+
+      if (!existing) return memberId;
+    }
+  }
+
+  private async findAvailablePlacementOnSide(
+    startParentId: number,
+    side: Position,
+  ) {
+    let currentParentId = startParentId;
+
+    while (true) {
+      const existing = await this.prisma.user.findFirst({
+        where: {
+          parentId: currentParentId,
+          position: side,
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return { parentId: currentParentId, position: side };
+      }
+
+      currentParentId = existing.id;
+    }
+  }
+
+  private async createTemporaryUser(params: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    sponsorId: number;
+    parentId: number;
+    position: Position;
+  }) {
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      sponsorId,
+      parentId,
+      position,
+    } = params;
+    const passwordHash = await argon2.hash(password);
+    const memberId = await this.generateUniqueMemberId();
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          memberId,
+          firstName,
+          lastName,
+          email,
+          phoneNumber: '',
+          country: '',
+          passwordHash,
+          sponsorId,
+          parentId,
+          position,
+          status: Status.ACTIVE,
+          g2faSecret: '',
+          isG2faEnabled: false,
+        },
+      });
+
+      await this.walletService.createWalletsForUser(tx, createdUser.id);
+
+      return createdUser;
+    });
+
+    return {
+      id: user.id,
+      memberId: user.memberId,
+      email: user.email,
+      password,
+    };
+  }
+
+  async seedPowerAccounts() {
+    const company = await this.prisma.user.findFirst({
+      where: { memberId: 'COMPANY' },
+      select: { id: true },
+    });
+
+    if (!company) {
+      throw new BadRequestException(
+        'Company account not found. Bootstrap company first.',
+      );
+    }
+
+    const rows: Record<string, string>[] = [];
+    const powerAccounts: {
+      index: number;
+      id: number;
+      memberId: string;
+      email: string;
+      password: string;
+    }[] = [];
+
+    let powerAccountIndex = 1;
+
+    while (powerAccounts.length < 15) {
+      const email = `poweraccount${powerAccountIndex}@gmail.com`;
+      const emailInUse = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+
+      if (!emailInUse) {
+        const placement = await this.findAvailablePlacementOnSide(
+          company.id,
+          Position.RIGHT,
+        );
+        const password = `PowerAccount${powerAccountIndex}-1234#`;
+
+        const powerUser = await this.createTemporaryUser({
+          email,
+          password,
+          firstName: `Power`,
+          lastName: `Account ${powerAccountIndex}`,
+          sponsorId: company.id,
+          parentId: placement.parentId,
+          position: placement.position,
+        });
+
+        powerAccounts.push({
+          index: powerAccountIndex,
+          id: powerUser.id,
+          memberId: powerUser.memberId,
+          email: powerUser.email,
+          password: powerUser.password,
+        });
+      }
+
+      powerAccountIndex += 1;
+    }
+
+    for (const powerAccount of powerAccounts) {
+      const sheetName = `poweraccount${powerAccount.index}`;
+
+      rows.push({
+        sheetName,
+        rowType: 'POWER_ACCOUNT',
+        powerAccountMemberId: powerAccount.memberId,
+        powerAccountPassword: powerAccount.password,
+        memberId: powerAccount.memberId,
+        password: powerAccount.password,
+        email: powerAccount.email,
+      });
+
+      for (let subAccountIndex = 1; subAccountIndex <= 100; subAccountIndex++) {
+        const subEmail = `subaccount-poweraccount${powerAccount.index}${subAccountIndex}@gmail.com`;
+        const subPassword = `SubAccount-${powerAccount.index}-${subAccountIndex}-1234#`;
+        const placement = await this.findAvailablePlacementOnSide(
+          powerAccount.id,
+          Position.LEFT,
+        );
+
+        const subUser = await this.createTemporaryUser({
+          email: subEmail,
+          password: subPassword,
+          firstName: `Sub`,
+          lastName: `Power ${powerAccount.index}-${subAccountIndex}`,
+          sponsorId: powerAccount.id,
+          parentId: placement.parentId,
+          position: placement.position,
+        });
+
+        rows.push({
+          sheetName,
+          rowType: 'SUB_ACCOUNT',
+          powerAccountMemberId: powerAccount.memberId,
+          powerAccountPassword: powerAccount.password,
+          memberId: subUser.memberId,
+          password: subUser.password,
+          email: subUser.email,
+        });
+      }
+    }
+
+    return {
+      fileName: `power-accounts-${Date.now()}.csv`,
+      csv: this.convertToCSV(rows),
+      totalPowerAccountsCreated: powerAccounts.length,
+      totalSubAccountsCreated: powerAccounts.length * 100,
+    };
   }
 
   async exportAllUserData() {

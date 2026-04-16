@@ -18,6 +18,8 @@ import {
   parseAdminDateEnd,
   parseAdminDateStart,
 } from '../common/toronto-time';
+import { existsSync, readFileSync } from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class AdminUsersService {
@@ -562,6 +564,50 @@ export class AdminUsersService {
     return `subaccount-poweraccount${powerIndex}${subIndex}-${token}@gmail.com`;
   }
 
+  private resolvePowerSheetSubAccountNamesFile(): string {
+    const fileName = 'power-sheet-sub-account-names.txt';
+    const candidates = [
+      path.join(__dirname, 'data', fileName),
+      path.join(process.cwd(), 'src', 'admin', 'data', fileName),
+    ];
+    for (const p of candidates) {
+      if (existsSync(p)) return p;
+    }
+    return candidates[0];
+  }
+
+  /** One line = "FirstName Rest..." → firstName + lastName (rest may be empty). */
+  private loadPowerSheetSubAccountNames(): { firstName: string; lastName: string }[] {
+    const filePath = this.resolvePowerSheetSubAccountNamesFile();
+    if (!existsSync(filePath)) {
+      throw new BadRequestException(
+        `Sub-account names file not found at ${filePath}. Create src/admin/data/${path.basename(filePath)}.`,
+      );
+    }
+    const raw = readFileSync(filePath, 'utf8');
+    const lines = raw.split(/\r?\n/);
+    const names: { firstName: string; lastName: string }[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const space = trimmed.indexOf(' ');
+      if (space === -1) {
+        names.push({ firstName: trimmed, lastName: '' });
+      } else {
+        names.push({
+          firstName: trimmed.slice(0, space).trim(),
+          lastName: trimmed.slice(space + 1).trim(),
+        });
+      }
+    }
+    if (names.length === 0) {
+      throw new BadRequestException(
+        'No names found in power-sheet sub-account names file. Add at least one non-comment line.',
+      );
+    }
+    return names;
+  }
+
   async seedPowerAccounts() {
     const company = await this.prisma.user.findFirst({
       where: { memberId: 'COMPANY' },
@@ -571,6 +617,8 @@ export class AdminUsersService {
     if (!company) {
       throw new BadRequestException('Company account not found.');
     }
+
+    const subAccountNames = this.loadPowerSheetSubAccountNames();
 
     const rows: Record<string, string>[] = [];
     const powerAccounts: {
@@ -583,7 +631,7 @@ export class AdminUsersService {
 
     // Create exactly 15 power accounts on the RIGHT side chain from COMPANY.
     for (let powerIndex = 1; powerIndex <= 15; powerIndex++) {
-      const email = `vaultireinfinite1+power${powerIndex}@gmail.com`;
+      const email = `vaultireinfinite1+${powerIndex}@gmail.com`;
       const alreadyExists = await this.prisma.user.findUnique({
         where: { email },
         select: { id: true },
@@ -603,8 +651,8 @@ export class AdminUsersService {
       const powerUser = await this.createTemporaryUser({
         email,
         password,
-        firstName: 'Power',
-        lastName: `Account ${powerIndex}`,
+        firstName: 'Vaultire Infinite',
+        lastName: 'Admin',
         sponsorId: company.id,
         parentId: placement.parentId,
         position: placement.position,
@@ -647,6 +695,10 @@ export class AdminUsersService {
 
       for (let subIndex = 1; subIndex <= 100; subIndex++) {
         const subEmail = this.buildRandomSubAccountEmail(power.index, subIndex);
+        const nameSlot =
+          (power.index - 1) * 100 + (subIndex - 1);
+        const { firstName: subFirstName, lastName: subLastName } =
+          subAccountNames[nameSlot % subAccountNames.length];
 
         const subPassword = `SubAccount-${power.index}-${subIndex}-1234#`;
         const placement = await this.findAvailablePlacementOnSide(
@@ -657,8 +709,8 @@ export class AdminUsersService {
         const subUser = await this.createTemporaryUser({
           email: subEmail,
           password: subPassword,
-          firstName: 'Sub',
-          lastName: `Power ${power.index}-${subIndex}`,
+          firstName: subFirstName,
+          lastName: subLastName,
           sponsorId: power.id,
           parentId: placement.parentId,
           position: placement.position,

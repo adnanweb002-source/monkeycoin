@@ -383,10 +383,12 @@ export class AdminUsersService {
 
       // 1️⃣ Delete dependent tables first
       await tx.packageIncomeLog.deleteMany({});
+      await tx.targetAssignment.deleteMany({});
       await tx.packagePurchase.deleteMany({});
       await tx.walletTransaction.deleteMany({});
       await tx.withdrawalRequest.deleteMany({});
       await tx.depositRequest.deleteMany({});
+      await tx.externalDeposit.deleteMany({});
       await tx.wallet.deleteMany({
         where: { userId: { not: company?.id ?? -1 } },
       });

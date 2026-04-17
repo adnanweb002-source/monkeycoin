@@ -625,6 +625,7 @@ export class AdminUsersService {
       index: number;
       id: number;
       memberId: string;
+      name: string;
       email: string;
       password: string;
     }[] = [];
@@ -662,6 +663,7 @@ export class AdminUsersService {
         index: powerIndex,
         id: powerUser.id,
         memberId: powerUser.memberId,
+        name: 'Vaultire Infinite Admin',
         email: powerUser.email,
         password,
       });
@@ -669,28 +671,44 @@ export class AdminUsersService {
 
     // For each power account (as sponsor), create exactly 100 LEFT-side accounts.
     for (const power of powerAccounts) {
-      const sheetName = `poweraccount${power.index}`;
+      const sheetName = `Power Account - ${power.index}`;
 
       // top row for each "sheet": power account credentials
       rows.push({
         sheetName,
-        rowType: 'POWER_ACCOUNT',
-        sponsorMemberId: power.memberId,
-        sponsorPassword: power.password,
-        memberId: power.memberId,
-        password: power.password,
-        email: power.email,
+        'Account_Type': 'POWER ACCOUNT',
+        'Name': power.name,
+        'Sponsor_Member_ID': power.memberId,
+        'Sponsor_Password': power.password,
+        'Member_ID': power.memberId,
+        'Password': power.password,
+        'Email': power.email,
       });
 
       // optional spacer/header row for easier frontend grouping/rendering
+       
+      // Spacer row
       rows.push({
         sheetName,
-        rowType: 'SUB_ACCOUNTS_HEADER',
-        sponsorMemberId: power.memberId,
-        sponsorPassword: power.password,
-        memberId: 'memberId',
-        password: 'password',
-        email: 'email',
+        'Account_Type': '',
+        'Name': '',
+        'Sponsor_Member_ID': '',
+        'Sponsor_Password': '',
+        'Member_ID': '',
+        'Password': '',
+        'Email': '',
+      });
+
+      // Sub-accounts header row
+      rows.push({
+        sheetName,
+        'Account_Type': 'SUB_ACCOUNTS_HEADER',
+        'Name': 'Name',
+        'Sponsor_Member_ID': power.memberId,
+        'Sponsor_Password': power.password,
+        'Member_ID': 'memberId',
+        'Password': 'password',
+        'Email': 'email',
       });
 
       for (let subIndex = 1; subIndex <= 100; subIndex++) {
@@ -718,12 +736,13 @@ export class AdminUsersService {
 
         rows.push({
           sheetName,
-          rowType: 'SUB_ACCOUNT',
-          sponsorMemberId: power.memberId,
-          sponsorPassword: power.password,
-          memberId: subUser.memberId,
-          password: subPassword,
-          email: subUser.email,
+          'Account_Type': 'SUB_ACCOUNT',
+          'Name': `${subFirstName} ${subLastName}`,
+          'Sponsor_Member_ID': power.memberId,
+          'Sponsor_Password': power.password,
+          'Member_ID': subUser.memberId,
+          'Password': subPassword,
+          'Email': subUser.email,
         });
       }
     }

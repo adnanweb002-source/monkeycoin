@@ -545,6 +545,9 @@ export class WalletController {
         skip,
         take: pageSize,
         orderBy: { id: 'desc' },
+        include: {
+          user: true,
+        },
       }),
       this.prisma.externalDeposit.count(),
     ]);

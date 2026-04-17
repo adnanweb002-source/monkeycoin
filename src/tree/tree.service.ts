@@ -303,6 +303,9 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
+      include: {
+        user: true,
+      },
     });
 
     const total = await this.prisma.externalDeposit.count({

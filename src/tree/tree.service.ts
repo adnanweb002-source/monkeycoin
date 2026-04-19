@@ -1,5 +1,10 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { Role } from '@prisma/client';
 import Decimal from 'decimal.js';
 
 type DbRow = {
@@ -449,5 +454,425 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
   `;
 
     return { userId: result[0]?.id ?? rootUserId };
+  }
+
+  /**
+   * Binary placement downline: all descendants under `rootUserId` (via parent_id), excluding the root.
+   * Totals match admin user list: finished external deposits (fiat), approved withdrawals, active package purchases.
+   */
+  async getDownlineMembersWithStats(
+    rootUserId: number,
+    requesterId: number,
+    requesterRole: Role,
+    page = 1,
+    pageSize = 20,
+  ) {
+    if (rootUserId !== requesterId && requesterRole !== Role.ADMIN) {
+      throw new ForbiddenException(
+        'You can only view downline for your own account',
+      );
+    }
+
+    const maxPageSize = 100;
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.min(Math.max(1, pageSize), maxPageSize);
+    const skip = (safePage - 1) * safePageSize;
+
+    const root = await this.prisma.user.findUnique({
+      where: { id: rootUserId },
+      select: { id: true },
+    });
+    if (!root) {
+      throw new BadRequestException('User not found');
+    }
+
+    type Row = {
+      full_total: number;
+      id: number;
+      member_id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone_number: string | null;
+      status: string;
+      position: string | null;
+      sponsor_id: number | null;
+      created_at: Date;
+      avatar_id: string;
+      current_rank: number;
+      active_package_count: number;
+      total_deposits: Decimal | null;
+      total_withdrawals: Decimal | null;
+      total_package_amount: Decimal | null;
+    };
+
+    const rows = await this.prisma.$queryRaw<Row[]>`
+WITH RECURSIVE downline AS (
+  SELECT
+    u.id,
+    u.parent_id,
+    u.member_id,
+    u.first_name,
+    u.last_name,
+    u.email,
+    u.phone_number,
+    u.status,
+    u.position::text AS position,
+    u.sponsor_id,
+    u.created_at,
+    u.avatar_id,
+    u."currentRank" AS current_rank,
+    u."activePackageCount" AS active_package_count
+  FROM "users" u
+  WHERE u.id = ${rootUserId}
+
+  UNION ALL
+
+  SELECT
+    u.id,
+    u.parent_id,
+    u.member_id,
+    u.first_name,
+    u.last_name,
+    u.email,
+    u.phone_number,
+    u.status,
+    u.position::text AS position,
+    u.sponsor_id,
+    u.created_at,
+    u.avatar_id,
+    u."currentRank" AS current_rank,
+    u."activePackageCount" AS active_package_count
+  FROM "users" u
+  INNER JOIN downline d ON u.parent_id = d.id
+),
+downline_rows AS (
+  SELECT * FROM downline WHERE id <> ${rootUserId}
+),
+numbered AS (
+  SELECT
+    dr.*,
+    (COUNT(*) OVER ())::int AS full_total,
+    ROW_NUMBER() OVER (ORDER BY dr.created_at DESC) AS rn
+  FROM downline_rows dr
+),
+paged AS (
+  SELECT * FROM numbered n
+  WHERE n.rn > ${skip} AND n.rn <= ${skip + safePageSize}
+),
+deposit_totals AS (
+  SELECT
+    e."userId",
+    COALESCE(SUM(e."fiatAmount"), 0)::decimal(65, 30) AS total_deposits
+  FROM "ExternalDeposit" e
+  INNER JOIN paged p ON p.id = e."userId"
+  WHERE e.status = 'finished'
+  GROUP BY e."userId"
+),
+withdrawal_totals AS (
+  SELECT
+    w."userId",
+    COALESCE(SUM(w.amount), 0)::decimal(65, 30) AS total_withdrawals
+  FROM withdrawal_requests w
+  INNER JOIN paged p ON p.id = w."userId"
+  WHERE w.status = 'APPROVED'
+  GROUP BY w."userId"
+),
+package_totals AS (
+  SELECT
+    pp."userId",
+    COALESCE(SUM(pp.amount), 0)::decimal(65, 30) AS total_package_amount
+  FROM package_purchases pp
+  INNER JOIN paged p ON p.id = pp."userId"
+  WHERE pp.status = 'ACTIVE'
+  GROUP BY pp."userId"
+)
+SELECT
+  p.full_total,
+  p.id,
+  p.member_id,
+  p.first_name,
+  p.last_name,
+  p.email,
+  p.phone_number,
+  p.status,
+  p.position,
+  p.sponsor_id,
+  p.created_at,
+  p.avatar_id,
+  p.current_rank,
+  p.active_package_count,
+  COALESCE(dt.total_deposits, 0) AS total_deposits,
+  COALESCE(wt.total_withdrawals, 0) AS total_withdrawals,
+  COALESCE(pt.total_package_amount, 0) AS total_package_amount
+FROM paged p
+LEFT JOIN deposit_totals dt ON dt."userId" = p.id
+LEFT JOIN withdrawal_totals wt ON wt."userId" = p.id
+LEFT JOIN package_totals pt ON pt."userId" = p.id
+ORDER BY p.created_at DESC;
+`;
+
+    let total = rows[0]?.full_total ?? 0;
+    if (rows.length === 0) {
+      const countOnly = await this.prisma.$queryRaw<{ c: bigint }[]>`
+WITH RECURSIVE downline AS (
+  SELECT u.id, u.parent_id
+  FROM "users" u
+  WHERE u.id = ${rootUserId}
+  UNION ALL
+  SELECT u.id, u.parent_id
+  FROM "users" u
+  INNER JOIN downline d ON u.parent_id = d.id
+)
+SELECT COUNT(*)::bigint AS c
+FROM downline
+WHERE id <> ${rootUserId};
+`;
+      total = Number(countOnly[0]?.c ?? 0);
+      return {
+        data: [],
+        page: safePage,
+        pageSize: safePageSize,
+        total,
+        totalPages: Math.ceil(total / safePageSize) || 0,
+      };
+    }
+
+    const data = rows.map((r) => ({
+      id: r.id,
+      memberId: r.member_id,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      email: r.email,
+      phoneNumber: r.phone_number,
+      status: r.status,
+      position: r.position as 'LEFT' | 'RIGHT' | null,
+      sponsorId: r.sponsor_id,
+      createdAt: r.created_at,
+      avatarId: r.avatar_id,
+      currentRank: r.current_rank,
+      activePackageCount: r.active_package_count,
+      totalDeposits: new Decimal(r.total_deposits ?? 0).toFixed(),
+      totalWithdrawals: new Decimal(r.total_withdrawals ?? 0).toFixed(),
+      totalPackageAmount: new Decimal(r.total_package_amount ?? 0).toFixed(),
+    }));
+
+    return {
+      data,
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      totalPages: Math.ceil(total / safePageSize) || 0,
+    };
+  }
+
+  /**
+   * Sponsor / referral downline: all users in the sponsor genealogy under `rootUserId`
+   * (transitive via sponsor_id), excluding the root. Same aggregates as {@link getDownlineMembersWithStats}.
+   */
+  async getSponsorDownlineMembersWithStats(
+    rootUserId: number,
+    requesterId: number,
+    requesterRole: Role,
+    page = 1,
+    pageSize = 20,
+  ) {
+    if (rootUserId !== requesterId && requesterRole !== Role.ADMIN) {
+      throw new ForbiddenException(
+        'You can only view downline for your own account',
+      );
+    }
+
+    const maxPageSize = 100;
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.min(Math.max(1, pageSize), maxPageSize);
+    const skip = (safePage - 1) * safePageSize;
+
+    const root = await this.prisma.user.findUnique({
+      where: { id: rootUserId },
+      select: { id: true },
+    });
+    if (!root) {
+      throw new BadRequestException('User not found');
+    }
+
+    type Row = {
+      full_total: number;
+      id: number;
+      member_id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone_number: string | null;
+      status: string;
+      position: string | null;
+      sponsor_id: number | null;
+      created_at: Date;
+      avatar_id: string;
+      current_rank: number;
+      active_package_count: number;
+      total_deposits: Decimal | null;
+      total_withdrawals: Decimal | null;
+      total_package_amount: Decimal | null;
+    };
+
+    const rows = await this.prisma.$queryRaw<Row[]>`
+WITH RECURSIVE downline AS (
+  SELECT
+    u.id,
+    u.parent_id,
+    u.member_id,
+    u.first_name,
+    u.last_name,
+    u.email,
+    u.phone_number,
+    u.status,
+    u.position::text AS position,
+    u.sponsor_id,
+    u.created_at,
+    u.avatar_id,
+    u."currentRank" AS current_rank,
+    u."activePackageCount" AS active_package_count
+  FROM "users" u
+  WHERE u.id = ${rootUserId}
+
+  UNION ALL
+
+  SELECT
+    u.id,
+    u.parent_id,
+    u.member_id,
+    u.first_name,
+    u.last_name,
+    u.email,
+    u.phone_number,
+    u.status,
+    u.position::text AS position,
+    u.sponsor_id,
+    u.created_at,
+    u.avatar_id,
+    u."currentRank" AS current_rank,
+    u."activePackageCount" AS active_package_count
+  FROM "users" u
+  INNER JOIN downline d ON u.sponsor_id = d.id
+),
+downline_rows AS (
+  SELECT * FROM downline WHERE id <> ${rootUserId}
+),
+numbered AS (
+  SELECT
+    dr.*,
+    (COUNT(*) OVER ())::int AS full_total,
+    ROW_NUMBER() OVER (ORDER BY dr.created_at DESC) AS rn
+  FROM downline_rows dr
+),
+paged AS (
+  SELECT * FROM numbered n
+  WHERE n.rn > ${skip} AND n.rn <= ${skip + safePageSize}
+),
+deposit_totals AS (
+  SELECT
+    e."userId",
+    COALESCE(SUM(e."fiatAmount"), 0)::decimal(65, 30) AS total_deposits
+  FROM "ExternalDeposit" e
+  INNER JOIN paged p ON p.id = e."userId"
+  WHERE e.status = 'finished'
+  GROUP BY e."userId"
+),
+withdrawal_totals AS (
+  SELECT
+    w."userId",
+    COALESCE(SUM(w.amount), 0)::decimal(65, 30) AS total_withdrawals
+  FROM withdrawal_requests w
+  INNER JOIN paged p ON p.id = w."userId"
+  WHERE w.status = 'APPROVED'
+  GROUP BY w."userId"
+),
+package_totals AS (
+  SELECT
+    pp."userId",
+    COALESCE(SUM(pp.amount), 0)::decimal(65, 30) AS total_package_amount
+  FROM package_purchases pp
+  INNER JOIN paged p ON p.id = pp."userId"
+  WHERE pp.status = 'ACTIVE'
+  GROUP BY pp."userId"
+)
+SELECT
+  p.full_total,
+  p.id,
+  p.member_id,
+  p.first_name,
+  p.last_name,
+  p.email,
+  p.phone_number,
+  p.status,
+  p.position,
+  p.sponsor_id,
+  p.created_at,
+  p.avatar_id,
+  p.current_rank,
+  p.active_package_count,
+  COALESCE(dt.total_deposits, 0) AS total_deposits,
+  COALESCE(wt.total_withdrawals, 0) AS total_withdrawals,
+  COALESCE(pt.total_package_amount, 0) AS total_package_amount
+FROM paged p
+LEFT JOIN deposit_totals dt ON dt."userId" = p.id
+LEFT JOIN withdrawal_totals wt ON wt."userId" = p.id
+LEFT JOIN package_totals pt ON pt."userId" = p.id
+ORDER BY p.created_at DESC;
+`;
+
+    let total = rows[0]?.full_total ?? 0;
+    if (rows.length === 0) {
+      const countOnly = await this.prisma.$queryRaw<{ c: bigint }[]>`
+WITH RECURSIVE downline AS (
+  SELECT u.id, u.sponsor_id
+  FROM "users" u
+  WHERE u.id = ${rootUserId}
+  UNION ALL
+  SELECT u.id, u.sponsor_id
+  FROM "users" u
+  INNER JOIN downline d ON u.sponsor_id = d.id
+)
+SELECT COUNT(*)::bigint AS c
+FROM downline
+WHERE id <> ${rootUserId};
+`;
+      total = Number(countOnly[0]?.c ?? 0);
+      return {
+        data: [],
+        page: safePage,
+        pageSize: safePageSize,
+        total,
+        totalPages: Math.ceil(total / safePageSize) || 0,
+      };
+    }
+
+    const data = rows.map((r) => ({
+      id: r.id,
+      memberId: r.member_id,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      email: r.email,
+      phoneNumber: r.phone_number,
+      status: r.status,
+      position: r.position as 'LEFT' | 'RIGHT' | null,
+      sponsorId: r.sponsor_id,
+      createdAt: r.created_at,
+      avatarId: r.avatar_id,
+      currentRank: r.current_rank,
+      activePackageCount: r.active_package_count,
+      totalDeposits: new Decimal(r.total_deposits ?? 0).toFixed(),
+      totalWithdrawals: new Decimal(r.total_withdrawals ?? 0).toFixed(),
+      totalPackageAmount: new Decimal(r.total_package_amount ?? 0).toFixed(),
+    }));
+
+    return {
+      data,
+      page: safePage,
+      pageSize: safePageSize,
+      total,
+      totalPages: Math.ceil(total / safePageSize) || 0,
+    };
   }
 }

@@ -6,6 +6,7 @@ import {
   Query,
   NotFoundException,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { TreeService } from './tree.service';
 import { UseGuards } from '@nestjs/common';
@@ -52,7 +53,58 @@ export class TreeController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Cacheable({ ttlSeconds: 30, namespace: 'tree', scope: 'user' })
+  @Get('downline/members')
+  async getDownlineMembersWithStats(
+    @Req() req,
+    @Query('userId') userId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const rootId =
+      userId !== undefined && userId !== ''
+        ? parseInt(userId, 10)
+        : req.user.id;
+    if (userId !== undefined && userId !== '' && isNaN(rootId)) {
+      throw new BadRequestException('Invalid userId');
+    }
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
+    return this.tree.getDownlineMembersWithStats(
+      rootId,
+      req.user.id,
+      req.user.role,
+      pageNum,
+      pageSizeNum,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('downline/sponsor-members')
+  async getSponsorDownlineMembersWithStats(
+    @Req() req,
+    @Query('userId') userId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const rootId =
+      userId !== undefined && userId !== ''
+        ? parseInt(userId, 10)
+        : req.user.id;
+    if (userId !== undefined && userId !== '' && isNaN(rootId)) {
+      throw new BadRequestException('Invalid userId');
+    }
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
+    return this.tree.getSponsorDownlineMembersWithStats(
+      rootId,
+      req.user.id,
+      req.user.role,
+      pageNum,
+      pageSizeNum,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('downline/deposit-funds')
   async getDownlineDepositFunds(
     @Req() req,

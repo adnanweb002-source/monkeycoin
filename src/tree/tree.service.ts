@@ -33,7 +33,7 @@ type DbRow = {
 
 @Injectable()
 export class TreeService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   /**
    * Returns a nested binary tree for userId.
@@ -289,57 +289,75 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
   async getDownlineDepositFunds(userId: number, page = 1, pageSize = 20) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { memberId: true },
+      select: { id: true },
     });
 
     if (!user) {
       throw new BadRequestException('User not found');
     }
 
-    const memberId = user.memberId;
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.max(1, pageSize);
+    const skip = (safePage - 1) * safePageSize;
 
-    const downLineDeposits = await this.prisma.externalDeposit.findMany({
-      where: {
-        user: {
-          sponsor: { memberId: memberId },
-        },
-        status: 'finished',
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        user: true,
-      },
-    });
+    const downlineRows = await this.prisma.$queryRaw<{ id: number }[]>`
+WITH RECURSIVE sponsor_tree AS (
+  SELECT id FROM "users" WHERE id = ${userId}
+  UNION ALL
+  SELECT u.id
+  FROM "users" u
+  INNER JOIN sponsor_tree s ON u.sponsor_id = s.id
+)
+SELECT id FROM sponsor_tree WHERE id <> ${userId};
+`;
 
-    const total = await this.prisma.externalDeposit.count({
-      where: {
-        user: {
-          sponsor: { memberId: memberId },
-        },
-        status: 'finished',
-      },
-    });
+    const downlineUserIds = downlineRows.map((r) => r.id);
 
-    const totalPages = Math.ceil(total / pageSize);
+    if (downlineUserIds.length === 0) {
+      return {
+        data: [],
+        totalAmount: 0,
+        total: 0,
+        page: safePage,
+        totalPages: 0,
+      };
+    }
 
-    const totalAmount = await this.prisma.externalDeposit.aggregate({
-      where: {
-        user: {
-          sponsor: { memberId: memberId },
-        },
-        status: 'finished',
-      },
-      _sum: { paidAmount: true },
-    });
+    const [downLineDeposits, total, totalAmount] =
+      await this.prisma.$transaction([
+        this.prisma.externalDeposit.findMany({
+          where: {
+            userId: { in: downlineUserIds },
+            status: 'finished',
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: safePageSize,
+          include: {
+            user: true,
+          },
+        }),
+        this.prisma.externalDeposit.count({
+          where: {
+            userId: { in: downlineUserIds },
+            status: 'finished',
+          },
+        }),
+        this.prisma.externalDeposit.aggregate({
+          where: {
+            userId: { in: downlineUserIds },
+            status: 'finished',
+          },
+          _sum: { paidAmount: true },
+        }),
+      ]);
 
     return {
       data: downLineDeposits,
       totalAmount: totalAmount._sum.paidAmount || 0,
       total,
-      page,
-      totalPages,
+      page: safePage,
+      totalPages: Math.ceil(total / safePageSize) || 0,
     };
   }
 

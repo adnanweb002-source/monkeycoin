@@ -286,34 +286,154 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
     });
   }
 
+  // async getDownlineDepositFunds(userId: number, page = 1, pageSize = 20) {
+  //   const user = await this.prisma.user.findUnique({
+  //     where: { id: userId },
+  //     select: { id: true },
+  //   });
+
+  //   if (!user) {
+  //     throw new BadRequestException('User not found');
+  //   }
+
+  //   const safePage = Math.max(1, page);
+  //   const safePageSize = Math.max(1, pageSize);
+  //   const skip = (safePage - 1) * safePageSize;
+
+  //   const downlineRows = await this.prisma.$queryRaw<{ id: number }[]>`
+  //       WITH RECURSIVE sponsor_tree AS (
+  //         SELECT id FROM "users" WHERE id = ${userId}
+  //         UNION ALL
+  //         SELECT u.id
+  //         FROM "users" u
+  //         INNER JOIN sponsor_tree s ON u.parent_id = s.id
+  //       )
+  //       SELECT id FROM sponsor_tree WHERE id <> ${userId};
+  //     `;
+
+  //   const downlineUserIds = downlineRows.map((r) => r.id);
+
+  //   if (downlineUserIds.length === 0) {
+  //     return {
+  //       data: [],
+  //       totalAmount: 0,
+  //       total: 0,
+  //       page: safePage,
+  //       totalPages: 0,
+  //     };
+  //   }
+
+  //   const [downLineDeposits, total, totalAmount] =
+  //     await this.prisma.$transaction([
+  //       this.prisma.externalDeposit.findMany({
+  //         where: {
+  //           userId: { in: downlineUserIds },
+  //           status: 'finished',
+  //         },
+  //         orderBy: { createdAt: 'desc' },
+  //         skip,
+  //         take: safePageSize,
+  //         include: {
+  //           user: true,
+  //         },
+  //       }),
+  //       this.prisma.externalDeposit.count({
+  //         where: {
+  //           userId: { in: downlineUserIds },
+  //           status: 'finished',
+  //         },
+  //       }),
+  //       this.prisma.externalDeposit.aggregate({
+  //         where: {
+  //           userId: { in: downlineUserIds },
+  //           status: 'finished',
+  //         },
+  //         _sum: { paidAmount: true },
+  //       }),
+  //     ]);
+
+  //   return {
+  //     data: downLineDeposits,
+  //     totalAmount: totalAmount._sum.paidAmount || 0,
+  //     total,
+  //     page: safePage,
+  //     totalPages: Math.ceil(total / safePageSize) || 0,
+  //   };
+  // }
+
   async getDownlineDepositFunds(userId: number, page = 1, pageSize = 20) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true },
-    });
-
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-
     const safePage = Math.max(1, page);
-    const safePageSize = Math.max(1, pageSize);
+    const safePageSize = Math.max(1, Math.min(pageSize, 100));
     const skip = (safePage - 1) * safePageSize;
 
-    const downlineRows = await this.prisma.$queryRaw<{ id: number }[]>`
-WITH RECURSIVE sponsor_tree AS (
-  SELECT id FROM "users" WHERE id = ${userId}
-  UNION ALL
-  SELECT u.id
-  FROM "users" u
-  INNER JOIN sponsor_tree s ON u.sponsor_id = s.id
-)
-SELECT id FROM sponsor_tree WHERE id <> ${userId};
-`;
+    const result = await this.prisma.$queryRaw<
+      {
+        id: number;
+        paidAmount: Decimal;
+        fiatAmount: Decimal;
+        status: string;
+        createdAt: Date;
+        userId: number;
+        first_name: string;
+        last_name: string;
+        member_id: string;
 
-    const downlineUserIds = downlineRows.map((r) => r.id);
+        total_count: number;
+        total_amount: Decimal;
+      }[]
+      >`
+    WITH RECURSIVE downline AS (
+      SELECT id
+      FROM "users"
+      WHERE id = ${userId}
+    
+      UNION ALL
+    
+      SELECT u.id
+      FROM "users" u
+      INNER JOIN downline d ON u.parent_id = d.id
+    ),
+    
+    downline_users AS (
+      SELECT id FROM downline WHERE id <> ${userId}
+    ),
+    
+    filtered_deposits AS (
+      SELECT 
+        e.*,
+        u.first_name,
+        u.last_name,
+        u.member_id
+      FROM "ExternalDeposit" e
+      INNER JOIN downline_users d ON d.id = e."userId"
+      INNER JOIN "users" u ON u.id = e."userId"
+      WHERE e.status = 'finished'
+    ),
+    
+    aggregates AS (
+      SELECT
+        COUNT(*)::int AS total_count,
+        COALESCE(SUM(e."paidAmount"), 0) AS total_amount
+      FROM filtered_deposits e
+    ),
+    
+    paged AS (
+      SELECT *
+      FROM filtered_deposits
+      ORDER BY "createdAt" DESC
+      LIMIT ${safePageSize}
+      OFFSET ${skip}
+    )
+    
+    SELECT 
+      p.*,
+      a.total_count,
+      a.total_amount
+    FROM paged p
+    CROSS JOIN aggregates a;
+    `;
 
-    if (downlineUserIds.length === 0) {
+    if (!result.length) {
       return {
         data: [],
         totalAmount: 0,
@@ -323,38 +443,26 @@ SELECT id FROM sponsor_tree WHERE id <> ${userId};
       };
     }
 
-    const [downLineDeposits, total, totalAmount] =
-      await this.prisma.$transaction([
-        this.prisma.externalDeposit.findMany({
-          where: {
-            userId: { in: downlineUserIds },
-            status: 'finished',
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: safePageSize,
-          include: {
-            user: true,
-          },
-        }),
-        this.prisma.externalDeposit.count({
-          where: {
-            userId: { in: downlineUserIds },
-            status: 'finished',
-          },
-        }),
-        this.prisma.externalDeposit.aggregate({
-          where: {
-            userId: { in: downlineUserIds },
-            status: 'finished',
-          },
-          _sum: { paidAmount: true },
-        }),
-      ]);
+    const total = Number(result[0].total_count || 0);
+    const totalAmount = new Decimal(result[0].total_amount || 0).toFixed();
+
+    const data = result.map((r) => ({
+      id: r.id,
+      paidAmount: new Decimal(r.paidAmount).toFixed(),
+      fiatAmount: new Decimal(r.fiatAmount).toFixed(),
+      status: r.status,
+      createdAt: r.createdAt,
+      user: {
+        id: r.userId,
+        firstName: r.first_name,
+        lastName: r.last_name,
+        memberId: r.member_id,
+      },
+    }));
 
     return {
-      data: downLineDeposits,
-      totalAmount: totalAmount._sum.paidAmount || 0,
+      data,
+      totalAmount,
       total,
       page: safePage,
       totalPages: Math.ceil(total / safePageSize) || 0,
@@ -472,6 +580,79 @@ SELECT id FROM sponsor_tree WHERE id <> ${userId};
   `;
 
     return { userId: result[0]?.id ?? rootUserId };
+  }
+
+  async shiftUpWithinDownline(authUserId: number, currentNodeUserId: number) {
+    if (!Number.isInteger(currentNodeUserId) || currentNodeUserId <= 0) {
+      throw new BadRequestException('Invalid currentNodeUserId');
+    }
+
+    if (currentNodeUserId === authUserId) {
+      throw new BadRequestException('You are already at your root node');
+    }
+
+    const currentNode = await this.prisma.user.findUnique({
+      where: { id: currentNodeUserId },
+      select: { id: true, parentId: true },
+    });
+
+    if (!currentNode) {
+      throw new BadRequestException('Current node user not found');
+    }
+
+    const currentInDownline = await this.prisma.$queryRaw<{ id: number }[]>`
+WITH RECURSIVE downline AS (
+  SELECT id
+  FROM "users"
+  WHERE id = ${authUserId}
+
+  UNION ALL
+
+  SELECT u.id
+  FROM "users" u
+  INNER JOIN downline d ON u.parent_id = d.id
+)
+SELECT id
+FROM downline
+WHERE id = ${currentNodeUserId}
+  AND id <> ${authUserId}
+LIMIT 1;
+`;
+
+    if (!currentInDownline.length) {
+      throw new ForbiddenException('Current node is not in your downline');
+    }
+
+    if (!currentNode.parentId) {
+      throw new BadRequestException('Current node has no parent to shift up to');
+    }
+
+    const parentInDownline = await this.prisma.$queryRaw<{ id: number }[]>`
+WITH RECURSIVE downline AS (
+  SELECT id
+  FROM "users"
+  WHERE id = ${authUserId}
+
+  UNION ALL
+
+  SELECT u.id
+  FROM "users" u
+  INNER JOIN downline d ON u.parent_id = d.id
+)
+SELECT id
+FROM downline
+WHERE id = ${currentNode.parentId}
+  AND id <> ${authUserId}
+LIMIT 1;
+`;
+
+    if (!parentInDownline.length) {
+      throw new ForbiddenException(
+        'Cannot shift above your allowed downline boundary',
+      );
+    }
+
+    return { userId: currentNode.parentId };
   }
 
   /**

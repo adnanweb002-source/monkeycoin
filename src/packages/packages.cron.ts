@@ -4,7 +4,7 @@ import { CronJob } from 'cron';
 import { PrismaService } from '../prisma.service';
 import { WalletService } from '../wallets/wallet.service';
 import { Decimal } from 'decimal.js';
-import { TransactionType, WalletType } from '@prisma/client';
+import { SETTING_TYPE, TransactionType, WalletType } from '@prisma/client';
 import { NotificationsService } from 'src/notifications/notifcations.service';
 import { DateTime } from 'luxon';
 import { APP_ZONE } from '../common/toronto-time';
@@ -20,14 +20,19 @@ export class PackagesCronService {
     private notificationsService: NotificationsService,
   ) {
     this.registerClosingCron();
+    this.registerOpeningCron();
+  }
+
+  private async getCronTime(settingKey: SETTING_TYPE, fallbackTime: string) {
+    const setting = await this.prisma.adminSetting.findUnique({
+      where: { key: settingKey },
+    });
+
+    return setting?.value ?? fallbackTime;
   }
 
   async registerClosingCron() {
-    const setting = await this.prisma.adminSetting.findUnique({
-      where: { key: 'BACK_OFFICE_CLOSING_TIME' },
-    });
-
-    const time = setting?.value ?? '23:59'; // fallback midnight
+    const time = await this.getCronTime('BACK_OFFICE_CLOSING_TIME', '23:59');
     const [h, m] = time.split(':').map(Number);
 
     // cron format: m h * * *
@@ -35,35 +40,57 @@ export class PackagesCronService {
 
     // remove old job if exists
     try {
-      this.scheduler.deleteCronJob('daily-package-returns-job');
+      this.scheduler.deleteCronJob('daily-package-returns-generate-job');
     } catch (_) {}
 
     const job = new CronJob(
       cronExpr,
       async () => {
-        await this.runDailyReturns();
+        await this.runDailyReturnGeneration();
       },
       null,
       false,
       APP_ZONE,
     );
 
-    this.scheduler.addCronJob('daily-package-returns-job', job);
+    this.scheduler.addCronJob('daily-package-returns-generate-job', job);
     job.start();
 
-    this.log.log('Daily package returns cron registered at ' + cronExpr);
+    this.log.log('Daily package yield generation cron registered at ' + cronExpr);
+  }
+
+  async registerOpeningCron() {
+    const time = await this.getCronTime('BACK_OFFICE_OPENING_TIME', '09:00');
+    const [h, m] = time.split(':').map(Number);
+
+    // cron format: m h * * *
+    const cronExpr = `${m} ${h} * * *`;
+
+    // remove old job if exists
+    try {
+      this.scheduler.deleteCronJob('daily-package-returns-credit-job');
+    } catch (_) {}
+
+    const job = new CronJob(
+      cronExpr,
+      async () => {
+        await this.runDailyReturnCredit();
+      },
+      null,
+      false,
+      APP_ZONE,
+    );
+
+    this.scheduler.addCronJob('daily-package-returns-credit-job', job);
+    job.start();
+
+    this.log.log('Daily package credit cron registered at ' + cronExpr);
   }
 
   async creditPendingReturns(creditDate: Date) {
-    const yesterday = DateTime.fromJSDate(creditDate)
-      .setZone(APP_ZONE)
-      .startOf('day')
-      .minus({ days: 1 })
-      .toJSDate();
 
     const logs: any = await this.prisma.packageIncomeLog.findMany({
       where: {
-        creditDate: yesterday,
         status: 'PENDING',
       },
       include: {
@@ -148,6 +175,24 @@ export class PackagesCronService {
   }
 
   async runDailyReturns() {
+    await this.runDailyReturnCredit();
+    await this.runDailyReturnGeneration();
+  }
+
+  async runDailyReturnCredit() {
+    const torontoNow = DateTime.now().setZone(APP_ZONE);
+    const creditDate = torontoNow.startOf('day').toJSDate();
+
+    this.log.log(
+      'Running opening package credits for ' + creditDate.toDateString(),
+    );
+
+    await this.creditPendingReturns(creditDate);
+
+    this.log.log('Opening package credit run complete');
+  }
+
+  async runDailyReturnGeneration() {
     const torontoNow = DateTime.now().setZone(APP_ZONE);
 
     // Normalize date (strip time)
@@ -158,9 +203,8 @@ export class PackagesCronService {
     // 1 = Monday, 7 = Sunday
     if (day === 7) {
       this.log.debug(
-        'Sunday — skipping package earnings generation, crediting for Saturday',
+        'Sunday — skipping package earnings generation',
       );
-      await this.creditPendingReturns(creditDate);
       return;
     }
 
@@ -179,22 +223,18 @@ export class PackagesCronService {
 
     if (holiday) {
       this.log.debug(
-        `Holiday (${holiday.title}) — skipping package earnings generation run. Crediting for yesterdat`,
+        `Holiday (${holiday.title}) — skipping package earnings generation run.`,
       );
-      await this.creditPendingReturns(creditDate);
       return;
     }
 
     this.log.log(
-      'Running daily package credits for ' + creditDate.toDateString(),
+      'Running closing package yield generation for ' + creditDate.toDateString(),
     );
 
-    // STEP 1: Credit yesterday's ROI
-    await this.creditPendingReturns(creditDate);
-
-    // STEP 2: Generate today's ROI (but DON'T credit)
+    // Generate today's ROI at closing (but DON'T credit)
     await this.generateTodayReturns(creditDate);
 
-    this.log.log('Daily package credit run complete');
+    this.log.log('Closing package yield generation run complete');
   }
 }

@@ -142,4 +142,15 @@ export class TreeController {
     const rootUser = parseInt(rootUserId);
     return this.tree.getExtremeRightUser(rootUser);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('search/shift-up')
+  async shiftUp(@Req() req, @Query('currentNodeUserId') currentNodeUserId: string) {
+    const currentNodeId = parseInt(currentNodeUserId, 10);
+    if (isNaN(currentNodeId)) {
+      throw new BadRequestException('Invalid currentNodeUserId');
+    }
+
+    return this.tree.shiftUpWithinDownline(req.user.id, currentNodeId);
+  }
 }

@@ -52,6 +52,7 @@ export class TreeController {
     @Query('userId') userId?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('memberId') memberId?: string,
   ) {
     const rootId =
       userId !== undefined && userId !== ''
@@ -62,12 +63,15 @@ export class TreeController {
     }
     const pageNum = page ? parseInt(page, 10) : 1;
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
+    const memberIdSearch =
+      memberId !== undefined && memberId.trim() !== '' ? memberId : undefined;
     return this.tree.getDownlineMembersWithStats(
       rootId,
       req.user.id,
       req.user.role,
       pageNum,
       pageSizeNum,
+      memberIdSearch,
     );
   }
 
@@ -78,6 +82,7 @@ export class TreeController {
     @Query('userId') userId?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('memberId') memberId?: string,
   ) {
     const rootId =
       userId !== undefined && userId !== ''
@@ -88,12 +93,15 @@ export class TreeController {
     }
     const pageNum = page ? parseInt(page, 10) : 1;
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 20;
+    const memberIdSearch =
+      memberId !== undefined && memberId.trim() !== '' ? memberId : undefined;
     return this.tree.getSponsorDownlineMembersWithStats(
       rootId,
       req.user.id,
       req.user.role,
       pageNum,
       pageSizeNum,
+      memberIdSearch,
     );
   }
 

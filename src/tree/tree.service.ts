@@ -659,11 +659,11 @@ LIMIT 1;
     return { userId: currentNode.parentId };
   }
 
-  /** Optional member-id search: case-insensitive substring match. Empty/whitespace = no filter. */
-  private memberIdSearchPattern(memberId?: string | null) {
+  /** Optional member-id search: exact match on `users.member_id` after trim. Empty/whitespace = no filter. */
+  private normalizeMemberIdSearch(memberId?: string | null) {
     const t = memberId?.trim();
     if (!t) return null;
-    return `%${t}%`;
+    return t;
   }
 
   /**
@@ -697,7 +697,7 @@ LIMIT 1;
       throw new BadRequestException('User not found');
     }
 
-    const memberIdPattern = this.memberIdSearchPattern(memberId);
+    const memberIdExact = this.normalizeMemberIdSearch(memberId);
 
     type Row = {
       full_total: number;
@@ -762,7 +762,7 @@ WITH RECURSIVE downline AS (
 downline_rows AS (
   SELECT * FROM downline
   WHERE id <> ${rootUserId}
-  AND (${memberIdPattern}::text IS NULL OR member_id ILIKE ${memberIdPattern})
+  AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact})
 ),
 numbered AS (
   SELECT
@@ -842,7 +842,7 @@ WITH RECURSIVE downline AS (
 SELECT COUNT(*)::bigint AS c
 FROM downline
 WHERE id <> ${rootUserId}
-AND (${memberIdPattern}::text IS NULL OR member_id ILIKE ${memberIdPattern});
+AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact});
 `;
       total = Number(countOnly[0]?.c ?? 0);
       return {
@@ -913,7 +913,7 @@ AND (${memberIdPattern}::text IS NULL OR member_id ILIKE ${memberIdPattern});
       throw new BadRequestException('User not found');
     }
 
-    const memberIdPattern = this.memberIdSearchPattern(memberId);
+    const memberIdExact = this.normalizeMemberIdSearch(memberId);
 
     type Row = {
       full_total: number;
@@ -978,7 +978,7 @@ WITH RECURSIVE downline AS (
 downline_rows AS (
   SELECT * FROM downline
   WHERE id <> ${rootUserId}
-  AND (${memberIdPattern}::text IS NULL OR member_id ILIKE ${memberIdPattern})
+  AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact})
 ),
 numbered AS (
   SELECT
@@ -1058,7 +1058,7 @@ WITH RECURSIVE downline AS (
 SELECT COUNT(*)::bigint AS c
 FROM downline
 WHERE id <> ${rootUserId}
-AND (${memberIdPattern}::text IS NULL OR member_id ILIKE ${memberIdPattern});
+AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact});
 `;
       total = Number(countOnly[0]?.c ?? 0);
       return {

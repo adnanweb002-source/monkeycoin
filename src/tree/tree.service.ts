@@ -369,6 +369,8 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
     const result = await this.prisma.$queryRaw<
       {
         id: number;
+        crypto: string;
+        paymentId: string;
         paidAmount: Decimal;
         fiatAmount: Decimal;
         status: string;
@@ -448,6 +450,8 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
 
     const data = result.map((r) => ({
       id: r.id,
+      paymentId: r.paymentId,
+      crypto: r.crypto,
       paidAmount: new Decimal(r.paidAmount).toFixed(),
       fiatAmount: new Decimal(r.fiatAmount).toFixed(),
       status: r.status,
@@ -655,6 +659,13 @@ LIMIT 1;
     return { userId: currentNode.parentId };
   }
 
+  /** Optional member-id search: exact match on `users.member_id` after trim. Empty/whitespace = no filter. */
+  private normalizeMemberIdSearch(memberId?: string | null) {
+    const t = memberId?.trim();
+    if (!t) return null;
+    return t;
+  }
+
   /**
    * Binary placement downline: all descendants under `rootUserId` (via parent_id), excluding the root.
    * Totals match admin user list: finished external deposits (fiat), approved withdrawals, active package purchases.
@@ -665,6 +676,7 @@ LIMIT 1;
     requesterRole: Role,
     page = 1,
     pageSize = 20,
+    memberId?: string | null,
   ) {
     if (rootUserId !== requesterId && requesterRole !== Role.ADMIN) {
       throw new ForbiddenException(
@@ -684,6 +696,8 @@ LIMIT 1;
     if (!root) {
       throw new BadRequestException('User not found');
     }
+
+    const memberIdExact = this.normalizeMemberIdSearch(memberId);
 
     type Row = {
       full_total: number;
@@ -746,7 +760,9 @@ WITH RECURSIVE downline AS (
   INNER JOIN downline d ON u.parent_id = d.id
 ),
 downline_rows AS (
-  SELECT * FROM downline WHERE id <> ${rootUserId}
+  SELECT * FROM downline
+  WHERE id <> ${rootUserId}
+  AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact})
 ),
 numbered AS (
   SELECT
@@ -815,17 +831,18 @@ ORDER BY p.created_at DESC;
     if (rows.length === 0) {
       const countOnly = await this.prisma.$queryRaw<{ c: bigint }[]>`
 WITH RECURSIVE downline AS (
-  SELECT u.id, u.parent_id
+  SELECT u.id, u.parent_id, u.member_id
   FROM "users" u
   WHERE u.id = ${rootUserId}
   UNION ALL
-  SELECT u.id, u.parent_id
+  SELECT u.id, u.parent_id, u.member_id
   FROM "users" u
   INNER JOIN downline d ON u.parent_id = d.id
 )
 SELECT COUNT(*)::bigint AS c
 FROM downline
-WHERE id <> ${rootUserId};
+WHERE id <> ${rootUserId}
+AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact});
 `;
       total = Number(countOnly[0]?.c ?? 0);
       return {
@@ -875,6 +892,7 @@ WHERE id <> ${rootUserId};
     requesterRole: Role,
     page = 1,
     pageSize = 20,
+    memberId?: string | null,
   ) {
     if (rootUserId !== requesterId && requesterRole !== Role.ADMIN) {
       throw new ForbiddenException(
@@ -894,6 +912,8 @@ WHERE id <> ${rootUserId};
     if (!root) {
       throw new BadRequestException('User not found');
     }
+
+    const memberIdExact = this.normalizeMemberIdSearch(memberId);
 
     type Row = {
       full_total: number;
@@ -956,7 +976,9 @@ WITH RECURSIVE downline AS (
   INNER JOIN downline d ON u.sponsor_id = d.id
 ),
 downline_rows AS (
-  SELECT * FROM downline WHERE id <> ${rootUserId}
+  SELECT * FROM downline
+  WHERE id <> ${rootUserId}
+  AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact})
 ),
 numbered AS (
   SELECT
@@ -1025,17 +1047,18 @@ ORDER BY p.created_at DESC;
     if (rows.length === 0) {
       const countOnly = await this.prisma.$queryRaw<{ c: bigint }[]>`
 WITH RECURSIVE downline AS (
-  SELECT u.id, u.sponsor_id
+  SELECT u.id, u.sponsor_id, u.member_id
   FROM "users" u
   WHERE u.id = ${rootUserId}
   UNION ALL
-  SELECT u.id, u.sponsor_id
+  SELECT u.id, u.sponsor_id, u.member_id
   FROM "users" u
   INNER JOIN downline d ON u.sponsor_id = d.id
 )
 SELECT COUNT(*)::bigint AS c
 FROM downline
-WHERE id <> ${rootUserId};
+WHERE id <> ${rootUserId}
+AND (${memberIdExact}::text IS NULL OR member_id = ${memberIdExact});
 `;
       total = Number(countOnly[0]?.c ?? 0);
       return {

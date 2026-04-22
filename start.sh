@@ -15,7 +15,7 @@ until $(curl --output /dev/null --silent --head --fail http://localhost:3000/hea
 done
 
 API_URL="http://localhost:3000/admin/bootstrap/company"
-API_KEY="super-secret-key"
+API_KEY="super-secret-key-admin-bootstrap"
 
 echo "🔐 Calling bootstrap API..."
 curl -X POST "$API_URL" \

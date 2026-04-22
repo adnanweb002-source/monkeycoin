@@ -2,7 +2,7 @@
 export const ALLOWED_BROWSER_ORIGINS: (string | RegExp)[] = [
   'https://vaultireinfinite.com',
   'https://www.vaultireinfinite.com',
-  'https://admin.vaultireinfinite.com',
+  'https://secure-admin-sss.vaultireinfinite.com',
   'https://gogex.tech',
   'https://www.gogex.tech',
   'https://admin.gogex.tech',

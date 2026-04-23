@@ -481,7 +481,13 @@ export class PackagesService {
       // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
-      const d_wallet_amount = new Decimal(dto.split[WalletType.D_WALLET] ?? 0);
+      let d_wallet_amount = new Decimal(0);
+
+      for (const p of parts) {
+        if (p.wallet === WalletType.D_WALLET) {
+          d_wallet_amount = new Decimal(p.amount);
+        }
+      }
 
       if (!dto.isTarget) {
         await this.addBinaryVolume(tx, user.id, bv);

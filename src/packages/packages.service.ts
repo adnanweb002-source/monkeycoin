@@ -213,7 +213,7 @@ export class PackagesService {
     // get the buyer
     let current = await tx.user.findUnique({
       where: { id: userId },
-      select: { sponsorId: true, position: true, parentId: true},
+      select: { sponsorId: true, position: true, parentId: true },
     });
 
     while (current?.parentId) {
@@ -259,7 +259,7 @@ export class PackagesService {
 
       current = await tx.user.findUnique({
         where: { id: parent.id },
-        select: { sponsorId: true, position: true, parentId: true},
+        select: { sponsorId: true, position: true, parentId: true },
       });
     }
   }
@@ -481,17 +481,21 @@ export class PackagesService {
       // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
-      if(!dto.isTarget) {
+      const d_wallet_amount = new Decimal(dto.split[WalletType.D_WALLET] ?? 0);
+
+      if (!dto.isTarget) {
         await this.addBinaryVolume(tx, user.id, bv);
       }
 
       if (user.sponsorId) {
-        await this.processTargetVolume(
-          tx,
-          user.sponsorId,
-          amt,
-          TargetSalesType.DIRECT,
-        );
+        if (d_wallet_amount.gt(0)) {
+          await this.processTargetVolume(
+            tx,
+            user.sponsorId,
+            d_wallet_amount,
+            TargetSalesType.DIRECT,
+          );
+        }
       }
 
       if (dto.isTarget) {

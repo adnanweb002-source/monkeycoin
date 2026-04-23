@@ -209,6 +209,7 @@ export class PackagesService {
     tx: Prisma.TransactionClient,
     userId: number,
     bv: Decimal,
+    d_wallet_amount: Decimal,
   ) {
     // get the buyer
     let current = await tx.user.findUnique({
@@ -240,12 +241,14 @@ export class PackagesService {
       });
 
       // trigger target engine
+      if (d_wallet_amount.gt(0)) {
       await this.processTargetVolume(
         tx,
         parent.id,
-        bv,
-        TargetSalesType.INDIRECT,
-      );
+          d_wallet_amount,
+          TargetSalesType.INDIRECT,
+        );
+      }
 
       await this.notificationsService.createNotification(
         parent.id,
@@ -490,7 +493,7 @@ export class PackagesService {
       }
 
       if (!dto.isTarget) {
-        await this.addBinaryVolume(tx, user.id, bv);
+        await this.addBinaryVolume(tx, user.id, bv, d_wallet_amount);
       }
 
       if (user.sponsorId) {

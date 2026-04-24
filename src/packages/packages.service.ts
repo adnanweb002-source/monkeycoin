@@ -388,7 +388,27 @@ export class PackagesService {
     // compute wallet deductions
     const parts = this.validateSplitConfig(buyerRole, dto.split, amt, rules);
 
-    const purchase = this.prisma.$transaction(async (tx) => {
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: buyerId,
+        actorType: buyerRole === Role.ADMIN ? 'admin' : 'user',
+        action: 'PACKAGE_PURCHASE_ATTEMPT',
+        entity: 'PackagePurchase',
+        after: {
+          packageId: pkg.id,
+          packageName: pkg.name,
+          beneficiaryUserId: user.id,
+          beneficiaryMemberId: user.memberId,
+          buyerId,
+          buyerMemberId: buyer.memberId,
+          amount: amt.toFixed(),
+          split: dto.split,
+          isTarget: dto.isTarget ?? false,
+        },
+      },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
       let purpose = '';
       if (buyer.id !== user.id) {
@@ -661,6 +681,26 @@ export class PackagesService {
           '/reports/gain-report?type=PACKAGE_PURCHASE',
         );
       }
+
+      await tx.auditLog.create({
+        data: {
+          actorId: buyerId,
+          actorType: buyerRole === Role.ADMIN ? 'admin' : 'user',
+          action: 'PACKAGE_PURCHASE_SUCCESS',
+          entity: 'PackagePurchase',
+          entityId: purchase.id,
+          after: {
+            purchaseId: purchase.id,
+            packageId: pkg.id,
+            userId: user.id,
+            buyerId,
+            amount: amt.toFixed(),
+            startDate: finalStartDate.toISOString(),
+            endDate: finalEndDate.toISOString(),
+            isTarget: dto.isTarget ?? false,
+          },
+        },
+      });
     });
 
     return {

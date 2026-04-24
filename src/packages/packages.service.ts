@@ -27,7 +27,7 @@ export class PackagesService {
     private walletService: WalletService,
     private treeService: TreeService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   async upsertPackageWalletRule(wallet: WalletType, minPct: Decimal) {
     return this.prisma.packageWalletConfig.upsert({
@@ -209,11 +209,12 @@ export class PackagesService {
     tx: Prisma.TransactionClient,
     userId: number,
     bv: Decimal,
+    d_wallet_amount: Decimal,
   ) {
     // get the buyer
     let current = await tx.user.findUnique({
       where: { id: userId },
-      select: { sponsorId: true, position: true, parentId: true},
+      select: { sponsorId: true, position: true, parentId: true },
     });
 
     while (current?.parentId) {
@@ -240,12 +241,14 @@ export class PackagesService {
       });
 
       // trigger target engine
+      if (d_wallet_amount.gt(0)) {
       await this.processTargetVolume(
         tx,
         parent.id,
-        bv,
-        TargetSalesType.INDIRECT,
-      );
+          d_wallet_amount,
+          TargetSalesType.INDIRECT,
+        );
+      }
 
       await this.notificationsService.createNotification(
         parent.id,
@@ -259,7 +262,7 @@ export class PackagesService {
 
       current = await tx.user.findUnique({
         where: { id: parent.id },
-        select: { sponsorId: true, position: true, parentId: true},
+        select: { sponsorId: true, position: true, parentId: true },
       });
     }
   }
@@ -481,17 +484,27 @@ export class PackagesService {
       // 🔹 BV = full package amount (adjust if business logic changes)
       const bv = amt;
 
-      if(!dto.isTarget) {
-        await this.addBinaryVolume(tx, user.id, bv);
+      let d_wallet_amount = new Decimal(0);
+
+      for (const p of parts) {
+        if (p.wallet === WalletType.D_WALLET) {
+          d_wallet_amount = new Decimal(p.amount);
+        }
+      }
+
+      if (!dto.isTarget) {
+        await this.addBinaryVolume(tx, user.id, bv, d_wallet_amount);
       }
 
       if (user.sponsorId) {
-        await this.processTargetVolume(
-          tx,
-          user.sponsorId,
-          amt,
-          TargetSalesType.DIRECT,
-        );
+        if (d_wallet_amount.gt(0)) {
+          await this.processTargetVolume(
+            tx,
+            user.sponsorId,
+            d_wallet_amount,
+            TargetSalesType.DIRECT,
+          );
+        }
       }
 
       if (dto.isTarget) {

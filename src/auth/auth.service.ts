@@ -898,7 +898,8 @@ export class AuthService {
         isWithdrawalRestricted: true,
         lockWithdrawalsTillTarget: true,
         isCrossLineTransferRestricted: true,
-        currentRank: true
+        currentRank: true,
+        activePackageCount: true,
       },
     });
     if (!user) throw new UnauthorizedException('User not found');

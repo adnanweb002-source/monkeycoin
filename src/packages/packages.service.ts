@@ -48,43 +48,52 @@ export class PackagesService {
     );
   }
 
-  validateSplitConfig(
+  async validateSplitConfig(
     buyerRole: Role,
     split: Record<string, number>,
-    amount: Decimal,
+    totalAmount: Decimal,
     rules: Record<WalletType, Decimal>,
   ) {
-    if (!split || Object.keys(split).length === 0)
-      throw new BadRequestException('Split configuration required');
-
-    const totalPct = Object.values(split).reduce((a, b) => a + b, 0);
-    if (totalPct !== 100)
-      throw new BadRequestException('Split must total 100%');
-
-    if (buyerRole !== Role.ADMIN) {
-      for (const wallet of Object.keys(rules) as WalletType[]) {
-        const provided = new Decimal(split[wallet] ?? 0);
-        if (provided.lt(rules[wallet])) {
-          throw new BadRequestException(
-            `Minimum ${rules[wallet].toFixed()}% required from ${wallet}`,
-          );
+    const parts: { wallet: WalletType; amount: string }[] = [];
+  
+    let total = new Decimal(0);
+  
+    for (const [wallet, amt] of Object.entries(split)) {
+      const amount = new Decimal(amt).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+  
+      if (amount.lte(0)) continue;
+  
+      // 🔹 Min % rule (optional but preserved)
+      if (buyerRole !== Role.ADMIN) {
+        const minPct = rules[wallet] || 0;
+  
+        if (minPct > 0) {
+          const pct = amount.div(totalAmount).mul(100);
+  
+          if (pct.lt(minPct)) {
+            throw new BadRequestException(
+              `${wallet} must be at least ${minPct}%`
+            );
+          }
         }
       }
-    } else {
-      // Admin: ensure 100% split from Bonus Wallet
-      const bonusPct = new Decimal(split[WalletType.A_WALLET] ?? 0);
-      if (!bonusPct.eq(100)) {
-        throw new BadRequestException(
-          `Admin purchases must be 100% from Bonus Wallet`,
-        );
-      }
+  
+      parts.push({
+        wallet: wallet as WalletType,
+        amount: amount.toFixed(2),
+      });
+  
+      total = total.plus(amount);
     }
-
-    // return computed debits
-    return Object.entries(split).map(([wallet, pct]) => ({
-      wallet: wallet as WalletType,
-      amount: amount.mul(pct).div(100).toFixed(),
-    }));
+  
+    // 🔴 STRICT TOTAL CHECK
+    if (!total.equals(totalAmount)) {
+      throw new BadRequestException(
+        `Split total ${total.toFixed(2)} must equal package amount ${totalAmount.toFixed(2)}`
+      );
+    }
+  
+    return parts;
   }
 
   async processTargetVolume(
@@ -386,7 +395,7 @@ export class PackagesService {
     const rules = await this.getPackageWalletRules();
 
     // compute wallet deductions
-    const parts = this.validateSplitConfig(buyerRole, dto.split, amt, rules);
+    const parts = await this.validateSplitConfig(buyerRole, dto.split, amt, rules);
 
     await this.prisma.auditLog.create({
       data: {

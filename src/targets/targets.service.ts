@@ -152,6 +152,16 @@ export class TargetsService {
       await tx.targetAssignment.delete({
         where: { id },
       });
+
+      // Remove generated ROI logs linked to this purchase before deleting purchase
+      await tx.packageIncomeLog.deleteMany({
+        where: { purchaseId: target.purchaseId },
+      });
+
+      // Delete associated target purchase
+      await tx.packagePurchase.delete({
+        where: { id: target.purchaseId },
+      });
     });
   }
 

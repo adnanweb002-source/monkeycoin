@@ -1114,14 +1114,58 @@ export class AdminUsersService {
     }
   }
 
-  async listPackagePurchasesWithEWallet(take = 20, skip = 0) {
+  async listPackagePurchasesWithEWallet(
+    take = 20,
+    skip = 0,
+    memberId?: string,
+  ) {
     const safeTake = Number.isFinite(take) ? Math.min(Math.max(take, 1), 200) : 20;
     const safeSkip = Number.isFinite(skip) ? Math.max(skip, 0) : 0;
+    const memberIdFilter = memberId?.trim();
+
+    const memberIdClause = memberIdFilter
+      ? Prisma.sql` AND LOWER(u.member_id) = LOWER(${memberIdFilter}) `
+      : Prisma.empty;
+
+    const totalRows = await this.prisma.$queryRaw<Array<{ total: bigint }>>(
+      Prisma.sql`
+        SELECT COUNT(*)::bigint AS total
+        FROM package_purchases pp
+        INNER JOIN users u ON u.id = pp.user_id
+        WHERE COALESCE((pp."splitConfig"->>'E_WALLET')::numeric, 0) > 0
+        ${memberIdClause}
+      `,
+    );
+
+    const totalCount = Number(totalRows[0]?.total ?? 0);
+
+    const idRows = await this.prisma.$queryRaw<Array<{ id: number }>>(
+      Prisma.sql`
+        SELECT pp.id
+        FROM package_purchases pp
+        INNER JOIN users u ON u.id = pp.user_id
+        WHERE COALESCE((pp."splitConfig"->>'E_WALLET')::numeric, 0) > 0
+        ${memberIdClause}
+        ORDER BY pp.created_at DESC
+        OFFSET ${safeSkip}
+        LIMIT ${safeTake}
+      `,
+    );
+
+    const ids = idRows.map((r) => r.id);
+    if (ids.length === 0) {
+      return {
+        take: safeTake,
+        skip: safeSkip,
+        memberId: memberIdFilter ?? null,
+        pageCount: 0,
+        totalCount,
+        data: [],
+      };
+    }
 
     const purchases = await this.prisma.packagePurchase.findMany({
-      orderBy: { createdAt: 'desc' },
-      skip: safeSkip,
-      take: safeTake * 5,
+      where: { id: { in: ids } },
       include: {
         package: {
           select: { id: true, name: true },
@@ -1135,38 +1179,43 @@ export class AdminUsersService {
       },
     });
 
-    const filtered = purchases
-      .map((p) => {
-        const eWalletAmount = this.getSplitAmount(p.splitConfig, WalletType.E_WALLET);
-        return { purchase: p, eWalletAmount };
-      })
-      .filter((row) => row.eWalletAmount.gt(0))
-      .slice(0, safeTake)
-      .map((row) => ({
-        id: row.purchase.id,
-        packageId: row.purchase.packageId,
-        packageName: row.purchase.package.name,
-        amount: row.purchase.amount,
-        eWalletAmount: row.eWalletAmount.toFixed(2),
-        purchasedFor: {
-          id: row.purchase.user.id,
-          memberId: row.purchase.user.memberId,
-          name: `${row.purchase.user.firstName} ${row.purchase.user.lastName}`.trim(),
-        },
-        purchasedBy: {
-          id: row.purchase.buyer.id,
-          memberId: row.purchase.buyer.memberId,
-          name: `${row.purchase.buyer.firstName} ${row.purchase.buyer.lastName}`.trim(),
-        },
-        createdAt: row.purchase.createdAt,
-        splitConfig: row.purchase.splitConfig,
-      }));
+    const purchaseMap = new Map(purchases.map((p) => [p.id, p]));
+    const data = ids
+      .map((id) => purchaseMap.get(id))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .map((purchase) => {
+        const eWalletAmount = this.getSplitAmount(
+          purchase.splitConfig,
+          WalletType.E_WALLET,
+        );
+        return {
+          id: purchase.id,
+          packageId: purchase.packageId,
+          packageName: purchase.package.name,
+          amount: purchase.amount,
+          eWalletAmount: eWalletAmount.toFixed(2),
+          purchasedFor: {
+            id: purchase.user.id,
+            memberId: purchase.user.memberId,
+            name: `${purchase.user.firstName} ${purchase.user.lastName}`.trim(),
+          },
+          purchasedBy: {
+            id: purchase.buyer.id,
+            memberId: purchase.buyer.memberId,
+            name: `${purchase.buyer.firstName} ${purchase.buyer.lastName}`.trim(),
+          },
+          createdAt: purchase.createdAt,
+          splitConfig: purchase.splitConfig,
+        };
+      });
 
     return {
       take: safeTake,
       skip: safeSkip,
-      count: filtered.length,
-      data: filtered,
+      memberId: memberIdFilter ?? null,
+      pageCount: data.length,
+      totalCount,
+      data,
     };
   }
 

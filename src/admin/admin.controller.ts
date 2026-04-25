@@ -239,10 +239,12 @@ export class AdminController {
   listPackagePurchasesWithEWallet(
     @Query('take') take?: string,
     @Query('skip') skip?: string,
+    @Query('memberId') memberId?: string,
   ) {
     return this.adminService.listPackagePurchasesWithEWallet(
       Number(take ?? 20),
       Number(skip ?? 0),
+      memberId,
     );
   }
 

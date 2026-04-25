@@ -1143,10 +1143,10 @@ export class AdminUsersService {
       Prisma.sql`
         SELECT pp.id
         FROM package_purchases pp
-        INNER JOIN users u ON u.id = pp.user_id
+        INNER JOIN users u ON u.id = pp."userId"
         WHERE COALESCE((pp."splitConfig"->>'E_WALLET')::numeric, 0) > 0
         ${memberIdClause}
-        ORDER BY pp.created_at DESC
+        ORDER BY pp."createdAt" DESC
         OFFSET ${safeSkip}
         LIMIT ${safeTake}
       `,

@@ -53,10 +53,17 @@ export class PackagesService {
     split: Record<string, number>,
     totalAmount: Decimal,
     rules: Record<WalletType, Decimal>,
+    lockWithdrawalsTillTarget: boolean,
   ) {
     const parts: { wallet: WalletType; amount: string }[] = [];
   
     let total = new Decimal(0);
+
+    if (lockWithdrawalsTillTarget) {
+      if (split[WalletType.E_WALLET]) {
+        throw new BadRequestException("You can't use the Earning Wallet until you reach your target");
+      }
+    }
   
     for (const [wallet, amt] of Object.entries(split)) {
       const amount = new Decimal(amt).toDecimalPlaces(2, Decimal.ROUND_DOWN);
@@ -395,7 +402,7 @@ export class PackagesService {
     const rules = await this.getPackageWalletRules();
 
     // compute wallet deductions
-    const parts = await this.validateSplitConfig(buyerRole, dto.split, amt, rules);
+    const parts = await this.validateSplitConfig(buyerRole, dto.split, amt, rules, buyer.lockWithdrawalsTillTarget);
 
     await this.prisma.auditLog.create({
       data: {

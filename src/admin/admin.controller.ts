@@ -232,4 +232,32 @@ export class AdminController {
   deleteDepositBonus(@Param('id') id: number) {
     return this.adminService.deleteDepositBonus(id);
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('package-purchases/with-e-wallet')
+  listPackagePurchasesWithEWallet(
+    @Query('take') take?: string,
+    @Query('skip') skip?: string,
+  ) {
+    return this.adminService.listPackagePurchasesWithEWallet(
+      Number(take ?? 20),
+      Number(skip ?? 0),
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete('package-purchases/:purchaseId')
+  deletePackagePurchase(
+    @Param('purchaseId') purchaseId: string,
+    @Req() req,
+    @Body('reason') reason?: string,
+  ) {
+    return this.adminService.deletePackagePurchase(
+      Number(purchaseId),
+      req.user.id,
+      reason,
+    );
+  }
 }

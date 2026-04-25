@@ -5,7 +5,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { randomUUID } from 'crypto';
-import { Position, Status, SETTING_TYPE } from '@prisma/client';
+import {
+  Position,
+  Status,
+  SETTING_TYPE,
+  Prisma,
+  TransactionType,
+  WalletType,
+} from '@prisma/client';
 import * as argon2 from 'argon2';
 import { WalletService } from 'src/wallets/wallet.service';
 import { AuthService } from 'src/auth/auth.service';
@@ -20,6 +27,8 @@ import {
 } from '../common/toronto-time';
 import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
+import Decimal from 'decimal.js';
+import { generateTxNumber } from 'src/wallets/utils';
 
 @Injectable()
 export class AdminUsersService {
@@ -996,5 +1005,412 @@ export class AdminUsersService {
     });
 
     return { ok: true };
+  }
+
+  private asRecord(value: Prisma.JsonValue): Record<string, any> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, any>;
+  }
+
+  private getSplitAmount(split: Prisma.JsonValue, wallet: WalletType): Decimal {
+    const rec = this.asRecord(split);
+    const raw = rec?.[wallet];
+    if (raw === undefined || raw === null) return new Decimal(0);
+    return new Decimal(raw);
+  }
+
+  private async reverseWalletTransaction(params: {
+    tx: Prisma.TransactionClient;
+    userId: number;
+    walletType: WalletType;
+    amount: Decimal;
+    purpose: string;
+    meta?: Prisma.JsonObject;
+  }) {
+    const { tx, userId, walletType, amount, purpose, meta } = params;
+    if (amount.lte(0)) return;
+
+    const wallet = await tx.wallet.findUnique({
+      where: {
+        userId_type: { userId, type: walletType },
+      },
+    });
+    if (!wallet) {
+      throw new BadRequestException(
+        `Wallet ${walletType} not found for user ${userId}`,
+      );
+    }
+
+    const current = new Decimal(wallet.balance.toString());
+    const next = current.plus(amount);
+
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: next.toFixed() },
+    });
+
+    await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        userId,
+        type: TransactionType.ADJUSTMENT,
+        direction: 'CREDIT',
+        amount: amount.toFixed(2),
+        balanceAfter: next.toFixed(2),
+        txNumber: generateTxNumber(),
+        purpose,
+        meta: meta ?? Prisma.JsonNull,
+      },
+    });
+  }
+
+  private async reverseBinaryVolume(
+    tx: Prisma.TransactionClient,
+    purchasedUserId: number,
+    amount: Decimal,
+  ) {
+    let current = await tx.user.findUnique({
+      where: { id: purchasedUserId },
+      select: { parentId: true, position: true },
+    });
+
+    while (current?.parentId) {
+      const parent = await tx.user.findUnique({
+        where: { id: current.parentId },
+        select: { id: true, leftBv: true, rightBv: true, rankLeftVolume: true, rankRightVolume: true },
+      });
+      if (!parent) break;
+
+      const isLeft = current.position === 'LEFT';
+      const currentBv = new Decimal(
+        isLeft ? parent.leftBv.toString() : parent.rightBv.toString(),
+      );
+      const currentRankBv = new Decimal(
+        isLeft
+          ? parent.rankLeftVolume.toString()
+          : parent.rankRightVolume.toString(),
+      );
+
+      const nextBv = Decimal.max(currentBv.minus(amount), 0);
+      const nextRankBv = Decimal.max(currentRankBv.minus(amount), 0);
+
+      await tx.user.update({
+        where: { id: parent.id },
+        data: isLeft
+          ? {
+            leftBv: nextBv.toFixed(2),
+            rankLeftVolume: nextRankBv.toFixed(2),
+          }
+          : {
+            rightBv: nextBv.toFixed(2),
+            rankRightVolume: nextRankBv.toFixed(2),
+          },
+      });
+
+      current = await tx.user.findUnique({
+        where: { id: parent.id },
+        select: { parentId: true, position: true },
+      });
+    }
+  }
+
+  async listPackagePurchasesWithEWallet(
+    take = 20,
+    skip = 0,
+    memberId?: string,
+  ) {
+    const safeTake = Number.isFinite(take) ? Math.min(Math.max(take, 1), 200) : 20;
+    const safeSkip = Number.isFinite(skip) ? Math.max(skip, 0) : 0;
+    const memberIdFilter = memberId?.trim();
+
+    const memberIdClause = memberIdFilter
+      ? Prisma.sql` AND LOWER(u.member_id) = LOWER(${memberIdFilter}) `
+      : Prisma.empty;
+
+    const totalRows = await this.prisma.$queryRaw<Array<{ total: bigint }>>(
+      Prisma.sql`
+        SELECT COUNT(*)::bigint AS total
+        FROM package_purchases pp
+        INNER JOIN users u ON u.id = pp.user_id
+        WHERE COALESCE((pp."splitConfig"->>'E_WALLET')::numeric, 0) > 0
+        ${memberIdClause}
+      `,
+    );
+
+    const totalCount = Number(totalRows[0]?.total ?? 0);
+
+    const idRows = await this.prisma.$queryRaw<Array<{ id: number }>>(
+      Prisma.sql`
+        SELECT pp.id
+        FROM package_purchases pp
+        INNER JOIN users u ON u.id = pp.user_id
+        WHERE COALESCE((pp."splitConfig"->>'E_WALLET')::numeric, 0) > 0
+        ${memberIdClause}
+        ORDER BY pp.created_at DESC
+        OFFSET ${safeSkip}
+        LIMIT ${safeTake}
+      `,
+    );
+
+    const ids = idRows.map((r) => r.id);
+    if (ids.length === 0) {
+      return {
+        take: safeTake,
+        skip: safeSkip,
+        memberId: memberIdFilter ?? null,
+        pageCount: 0,
+        totalCount,
+        data: [],
+      };
+    }
+
+    const purchases = await this.prisma.packagePurchase.findMany({
+      where: { id: { in: ids } },
+      include: {
+        package: {
+          select: { id: true, name: true },
+        },
+        user: {
+          select: { id: true, memberId: true, firstName: true, lastName: true },
+        },
+        buyer: {
+          select: { id: true, memberId: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    const purchaseMap = new Map(purchases.map((p) => [p.id, p]));
+    const data = ids
+      .map((id) => purchaseMap.get(id))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .map((purchase) => {
+        const eWalletAmount = this.getSplitAmount(
+          purchase.splitConfig,
+          WalletType.E_WALLET,
+        );
+        return {
+          id: purchase.id,
+          packageId: purchase.packageId,
+          packageName: purchase.package.name,
+          amount: purchase.amount,
+          eWalletAmount: eWalletAmount.toFixed(2),
+          purchasedFor: {
+            id: purchase.user.id,
+            memberId: purchase.user.memberId,
+            name: `${purchase.user.firstName} ${purchase.user.lastName}`.trim(),
+          },
+          purchasedBy: {
+            id: purchase.buyer.id,
+            memberId: purchase.buyer.memberId,
+            name: `${purchase.buyer.firstName} ${purchase.buyer.lastName}`.trim(),
+          },
+          createdAt: purchase.createdAt,
+          splitConfig: purchase.splitConfig,
+        };
+      });
+
+    return {
+      take: safeTake,
+      skip: safeSkip,
+      memberId: memberIdFilter ?? null,
+      pageCount: data.length,
+      totalCount,
+      data,
+    };
+  }
+
+  async deletePackagePurchase(purchaseId: number, adminId: number, reason?: string) {
+    const purchase = await this.prisma.packagePurchase.findUnique({
+      where: { id: purchaseId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            memberId: true,
+            firstName: true,
+            lastName: true,
+            sponsorId: true,
+          },
+        },
+        buyer: {
+          select: { id: true, memberId: true, firstName: true, lastName: true },
+        },
+        package: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    if (!purchase) {
+      throw new NotFoundException('Package purchase not found');
+    }
+
+    const purchaseAmount = new Decimal(purchase.amount.toString());
+    const split = this.asRecord(purchase.splitConfig);
+    const walletsUsed = Object.values(WalletType).filter((w) =>
+      new Decimal(split?.[w] ?? 0).gt(0),
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1) Credit back all wallets used in split to buyer
+      for (const walletType of walletsUsed) {
+        const amt = this.getSplitAmount(purchase.splitConfig, walletType);
+        await this.reverseWalletTransaction({
+          tx,
+          userId: purchase.buyerId,
+          walletType,
+          amount: amt,
+          purpose: `Package purchase reversal #${purchase.id}`,
+          meta: {
+            source: 'ADMIN_PACKAGE_PURCHASE_DELETE',
+            purchaseId: purchase.id,
+            packageName: purchase.package.name,
+            reason: reason ?? null,
+          },
+        });
+      }
+
+      // 2) If referral bonus exists, deduct it and delete referral income tx rows
+      if (purchase.user.sponsorId && !purchase.isTarget) {
+        const bonusCfg = await tx.adminSetting.findUnique({
+          where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
+        });
+        const bonusRate = bonusCfg?.value?.trim().endsWith('%')
+          ? new Decimal(bonusCfg.value.replace('%', '')).div(100)
+          : new Decimal(bonusCfg?.value ?? 0);
+        const referralAmount = purchaseAmount.mul(bonusRate).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+
+        if (referralAmount.gt(0)) {
+          const sponsorWallet = await tx.wallet.findUnique({
+            where: {
+              userId_type: {
+                userId: purchase.user.sponsorId,
+                type: WalletType.P_WALLET,
+              },
+            },
+          });
+          if (sponsorWallet) {
+            const current = new Decimal(sponsorWallet.balance.toString());
+            const next = current.minus(referralAmount);
+            if (next.lt(0)) {
+              throw new BadRequestException(
+                `Sponsor P_WALLET lacks balance for referral reversal on purchase ${purchase.id}`,
+              );
+            }
+            await tx.wallet.update({
+              where: { id: sponsorWallet.id },
+              data: { balance: next.toFixed(2) },
+            });
+
+            await tx.walletTransaction.create({
+              data: {
+                walletId: sponsorWallet.id,
+                userId: purchase.user.sponsorId,
+                type: TransactionType.ADJUSTMENT,
+                direction: 'DEBIT',
+                amount: referralAmount.toFixed(2),
+                balanceAfter: next.toFixed(2),
+                txNumber: generateTxNumber(),
+                purpose: `Referral reversal for package #${purchase.id}`,
+                meta: {
+                  source: 'ADMIN_PACKAGE_PURCHASE_DELETE',
+                  purchaseId: purchase.id,
+                  referredMemberId: purchase.user.memberId,
+                },
+              },
+            });
+          }
+
+          await tx.walletTransaction.deleteMany({
+            where: {
+              userId: purchase.user.sponsorId,
+              type: TransactionType.REFERRAL_INCOME,
+              direction: 'CREDIT',
+              amount: referralAmount.toFixed(2),
+              purpose: `Referral bonus from ${purchase.user.memberId}`,
+              createdAt: {
+                gte: new Date(purchase.createdAt.getTime() - 1000 * 60 * 15),
+                lte: new Date(purchase.createdAt.getTime() + 1000 * 60 * 15),
+              },
+            },
+          });
+        }
+      }
+
+      // 3) Remove propagated BV for non-target purchases
+      if (!purchase.isTarget) {
+        await this.reverseBinaryVolume(tx, purchase.userId, purchaseAmount);
+      }
+
+      // 4) Delete associated notifications (package + referral) in tight window
+      await tx.notification.deleteMany({
+        where: {
+          userId: { in: [purchase.userId, purchase.buyerId, purchase.user.sponsorId ?? -1] },
+          createdAt: {
+            gte: new Date(purchase.createdAt.getTime() - 1000 * 60 * 15),
+            lte: new Date(purchase.createdAt.getTime() + 1000 * 60 * 15),
+          },
+          OR: [
+            { redirectionRoute: '/reports/gain-report?type=PACKAGE_PURCHASE' },
+            { redirectionRoute: '/income/referral' },
+            { title: { contains: 'Package Purchased' } },
+            { title: { contains: 'Referral Bonus Earned' } },
+            { description: { contains: purchase.package.name } },
+          ],
+        },
+      });
+
+      // 5) Remove package income/target rows linked to this purchase
+      await tx.packageIncomeLog.deleteMany({
+        where: { purchaseId: purchase.id },
+      });
+      await tx.targetAssignment.deleteMany({
+        where: { purchaseId: purchase.id },
+      });
+
+      // 6) decrement active package count and remove purchase
+      await tx.user.update({
+        where: { id: purchase.userId },
+        data: {
+          activePackageCount: {
+            decrement: 1,
+          },
+        },
+      });
+
+      await tx.packagePurchase.delete({
+        where: { id: purchase.id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'PACKAGE_PURCHASE_DELETED',
+          entity: 'PackagePurchase',
+          entityId: purchase.id,
+          before: {
+            purchaseId: purchase.id,
+            packageId: purchase.packageId,
+            packageName: purchase.package.name,
+            amount: purchase.amount.toString(),
+            buyerId: purchase.buyerId,
+            userId: purchase.userId,
+            splitConfig: purchase.splitConfig,
+            isTarget: purchase.isTarget,
+          },
+          after: {
+            deleted: true,
+            reason: reason ?? null,
+          },
+        },
+      });
+    });
+
+    return {
+      ok: true,
+      message: 'Package purchase deleted and reversals applied',
+      purchaseId,
+    };
   }
 }

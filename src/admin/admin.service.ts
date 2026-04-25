@@ -1131,7 +1131,7 @@ export class AdminUsersService {
       Prisma.sql`
         SELECT COUNT(*)::bigint AS total
         FROM package_purchases pp
-        INNER JOIN users u ON u.id = pp.userId
+        INNER JOIN users u ON u.id = pp."userId"
         WHERE COALESCE((pp."splitConfig"->>'E_WALLET')::numeric, 0) > 0
         ${memberIdClause}
       `,

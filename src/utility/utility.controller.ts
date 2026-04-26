@@ -72,6 +72,7 @@ export class UtilityController {
   @Roles(Role.ADMIN)
   @Post('holidays')
   async createHoliday(
+    @Req() req,
     @Body()
     body: {
       title: string;
@@ -79,10 +80,13 @@ export class UtilityController {
       type: string;
     },
   ) {
-    return this.utility.createHoliday({
+    return this.utility.createHoliday(
+      req.user.id,
+      {
       ...body,
       date: holidayDateFromInput(body.date),
-    });
+      },
+    );
   }
 
   // 👑 ADMIN — UPDATE HOLIDAY
@@ -91,6 +95,7 @@ export class UtilityController {
   @Put('holidays/:id')
   async updateHoliday(
     @Param('id') id: string,
+    @Req() req,
     @Body()
     body: {
       title?: string;
@@ -98,17 +103,21 @@ export class UtilityController {
       type?: string;
     },
   ) {
-    return this.utility.updateHoliday(Number(id), {
-      ...body,
-      date: body.date ? holidayDateFromInput(body.date) : undefined,
-    });
+    return this.utility.updateHoliday(
+      Number(id),
+      {
+        ...body,
+        date: body.date ? holidayDateFromInput(body.date) : undefined,
+      },
+      req.user.id,
+    );
   }
 
   // 👑 ADMIN — DELETE HOLIDAY
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete('holidays/:id')
-  async deleteHoliday(@Param('id') id: string) {
-    return this.utility.deleteHoliday(Number(id));
+  async deleteHoliday(@Param('id') id: string, @Req() req) {
+    return this.utility.deleteHoliday(Number(id), req.user.id);
   }
 }

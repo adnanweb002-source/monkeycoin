@@ -12,9 +12,10 @@ import { TwoFactorService } from 'src/auth/twofactor.service';
 import { MailService } from 'src/mail/mail.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { MailModule } from 'src/mail/mail.module';
+import { TreeModule } from 'src/tree/tree.module';
 
 @Module({
-  imports: [NotificationsModule, MailModule],
+  imports: [NotificationsModule, MailModule, TreeModule],
   controllers: [AdminUsersController, AdminController],
   providers: [
     AdminUsersService,

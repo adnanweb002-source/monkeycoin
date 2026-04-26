@@ -9,6 +9,7 @@ import {
   Body,
   Query,
   Delete,
+  BadRequestException,
 } from '@nestjs/common';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -17,6 +18,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
 import { PackagesCronService } from 'src/packages/packages.cron';
+import { BinaryEngineService } from 'src/tree/binary-engine.service';
 import { WalletService } from 'src/wallets/wallet.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { CreateRankDto } from './dto/create-rank.dto';
@@ -50,13 +52,13 @@ export class AdminUsersController {
   }
 
   @Patch(':userId/suspend')
-  suspend(@Param('userId') userId: string) {
-    return this.svc.suspendUser(Number(userId));
+  suspend(@Param('userId') userId: string, @Req() req) {
+    return this.svc.suspendUser(Number(userId), req.user.id);
   }
 
   @Patch(':userId/activate')
-  activate(@Param('userId') userId: string) {
-    return this.svc.activateUser(Number(userId));
+  activate(@Param('userId') userId: string, @Req() req) {
+    return this.svc.activateUser(Number(userId), req.user.id);
   }
 
   @Patch(':userId/disable-2fa')
@@ -99,8 +101,12 @@ export class AdminUsersController {
     );
   }
   @Patch(':userId/profile')
-  updateProfile(@Param('userId') userId: string, @Body() dto: UpdateUserDto) {
-    return this.svc.updateUserProfile(Number(userId), dto);
+  updateProfile(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserDto,
+    @Req() req,
+  ) {
+    return this.svc.updateUserProfile(Number(userId), dto, req.user.id);
   }
 }
 
@@ -110,6 +116,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminUsersService,
     private readonly cron: PackagesCronService,
+    private readonly binaryEngine: BinaryEngineService,
     private readonly walletService: WalletService,
   ) {}
 
@@ -139,7 +146,42 @@ export class AdminController {
   @Roles('ADMIN')
   @UseGuards(JwtAuthGuard, RolesGuard)
   runNow() {
-    return this.cron.runDailyReturns();
+    return this.runPackageDailyWithGuard();
+  }
+
+  @Post('manual-package-daily')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  manualPackageDaily() {
+    return this.runPackageDailyWithGuard();
+  }
+
+  @Post('manual-binary-daily')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  async manualBinaryDaily() {
+    const dateKey = await this.binaryEngine.getBinaryPayoutDateKey();
+    if (await this.binaryEngine.hasCompletedBinaryRunForDateKey(dateKey)) {
+      throw new BadRequestException(
+        'Binary daily run for the current business day has already been completed.',
+      );
+    }
+    await this.binaryEngine.runDailyBinaryPayout();
+    return {
+      ok: true,
+      message: 'Binary daily run completed.',
+    };
+  }
+
+  private async runPackageDailyWithGuard() {
+    const ymd = this.cron.getTorontoDateKey();
+    if (await this.cron.hasCompletedPackageRunForDateKey(ymd)) {
+      throw new BadRequestException(
+        'Package daily run (credit + yield generation) for this Toronto business day has already been completed.',
+      );
+    }
+    await this.cron.runDailyReturns();
+    return { ok: true, message: 'Package daily run completed.' };
   }
 
   @Post('prune-system')
@@ -158,8 +200,12 @@ export class AdminController {
   @Post('settings/upsert')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  upsertSetting(@Body('key') key: SETTING_TYPE, @Body('value') value: string) {
-    return this.adminService.upsertSetting(key, value);
+  upsertSetting(
+    @Body('key') key: SETTING_TYPE,
+    @Body('value') value: string,
+    @Req() req,
+  ) {
+    return this.adminService.upsertSetting(key, value, req.user.id);
   }
 
   @Cacheable({ ttlSeconds: 60, namespace: 'admin', scope: 'user' })
@@ -186,24 +232,23 @@ export class AdminController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('create-rank')
-  createRank(@Body() dto: CreateRankDto) {
-    return this.adminService.createRank(dto);
+  createRank(@Body() dto: CreateRankDto, @Req() req) {
+    return this.adminService.createRank(dto, req.user.id);
   }
 
   @Patch('/ranks/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  @InvalidateExtra({ namespaces: ['ranks'] })
-  updateRank(@Param('id') id: number, @Body() dto: CreateRankDto) {
-    return this.adminService.updateRank(Number(id), dto);
+  updateRank(@Param('id') id: number, @Body() dto: CreateRankDto, @Req() req) {
+    return this.adminService.updateRank(Number(id), dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @InvalidateExtra({ namespaces: ['ranks'] })
   @Delete('/ranks/:id')
-  deleteRank(@Param('id') id: number) {
-    return this.adminService.deleteRank(Number(id));
+  deleteRank(@Param('id') id: number, @Req() req) {
+    return this.adminService.deleteRank(Number(id), req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -217,8 +262,8 @@ export class AdminController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('deposit-bonus')
-  createDepositBonus(@Body() dto: CreateDepositBonusDto) {
-    return this.adminService.createDepositBonus(dto);
+  createDepositBonus(@Body() dto: CreateDepositBonusDto, @Req() req) {
+    return this.adminService.createDepositBonus(dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -235,15 +280,31 @@ export class AdminController {
   updateDepositBonus(
     @Param('id') id: number,
     @Body() dto: UpdateDepositBonusDto,
+    @Req() req,
   ) {
-    return this.adminService.updateDepositBonus(id, dto);
+    return this.adminService.updateDepositBonus(id, dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete('deposit-bonus/:id')
-  deleteDepositBonus(@Param('id') id: number) {
-    return this.adminService.deleteDepositBonus(id);
+  deleteDepositBonus(@Param('id') id: number, @Req() req) {
+    return this.adminService.deleteDepositBonus(id, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('audit-logs')
+  getAuditLogs(
+    @Query('take') take?: string,
+    @Query('skip') skip?: string,
+    @Query('memberId') memberId?: string,
+  ) {
+    return this.adminService.getAuditLogs(
+      Number(take ?? 20),
+      Number(skip ?? 0),
+      memberId,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

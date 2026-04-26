@@ -20,7 +20,7 @@ export class UtilityService {
   async submitQuery(userId: number, message: string) {
     if (!message?.trim()) throw new BadRequestException('Message is required');
 
-    await this.prisma.query.create({
+    const created = await this.prisma.query.create({
       data: { userId, message },
     });
 
@@ -33,6 +33,19 @@ export class UtilityService {
       undefined,
       '/support'
     );
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'QUERY_SUBMITTED',
+        entity: 'Query',
+        entityId: created.id,
+        after: {
+          status: created.status,
+          message,
+        },
+      },
+    });
     return { ok: true, message: 'Query submitted successfully' };
   }
 
@@ -50,6 +63,20 @@ export class UtilityService {
         queryId,
         message,
         userId: userId,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'QUERY_REPLIED_BY_USER',
+        entity: 'QueryReply',
+        entityId: reply.id,
+        after: {
+          queryId,
+          message,
+        },
       },
     });
 
@@ -95,6 +122,23 @@ export class UtilityService {
       '/support'
     );
 
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        actorType: 'admin',
+        action: shouldClose ? 'QUERY_REPLIED_AND_CLOSED_BY_ADMIN' : 'QUERY_REPLIED_BY_ADMIN',
+        entity: 'Query',
+        entityId: queryId,
+        before: {
+          status: query.status,
+        },
+        after: {
+          replyId: reply.id,
+          status: shouldClose ? 'CLOSED' : query.status,
+        },
+      },
+    });
+
     return reply;
   }
 
@@ -133,8 +177,21 @@ export class UtilityService {
   }
 
   // ADMIN — CREATE / UPDATE / DELETE
-  async createHoliday(dto: { title: string; date: Date, type: string }) {
-    return this.prisma.holiday.create({ data: dto });
+  async createHoliday(adminId: number, dto: { title: string; date: Date, type: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.holiday.create({ data: dto });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'HOLIDAY_CREATED',
+          entity: 'Holiday',
+          entityId: created.id,
+          after: created,
+        },
+      });
+      return created;
+    });
   }
 
   async updateHoliday(
@@ -144,18 +201,48 @@ export class UtilityService {
       date: Date;
       type: string;
     }>,
+    adminId?: number,
   ) {
     const existing = await this.prisma.holiday.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Holiday not found');
 
-    return this.prisma.holiday.update({
-      where: { id },
-      data: dto,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.holiday.update({
+        where: { id },
+        data: dto,
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'HOLIDAY_UPDATED',
+          entity: 'Holiday',
+          entityId: id,
+          before: existing,
+          after: updated,
+        },
+      });
+      return updated;
     });
   }
 
-  async deleteHoliday(id: number) {
-    await this.prisma.holiday.delete({ where: { id } });
+  async deleteHoliday(id: number, adminId?: number) {
+    const existing = await this.prisma.holiday.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Holiday not found');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.holiday.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'HOLIDAY_DELETED',
+          entity: 'Holiday',
+          entityId: id,
+          before: existing,
+          after: { deleted: true },
+        },
+      });
+    });
     return { ok: true };
   }
 }

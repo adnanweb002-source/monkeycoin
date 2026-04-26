@@ -44,16 +44,16 @@ export class TargetsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id')
-  updateTarget(@Param('id') id: string, @Body() dto: UpdateTargetDto) {
-    return this.targetsService.updateTarget(Number(id), dto);
+  updateTarget(@Param('id') id: string, @Body() dto: UpdateTargetDto, @Req() req) {
+    return this.targetsService.updateTarget(Number(id), dto, req.user.id);
   }
 
   // ADMIN — delete target
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete(':id')
-  deleteTarget(@Param('id') id: string) {
-    return this.targetsService.deleteTarget(Number(id));
+  deleteTarget(@Param('id') id: string, @Req() req) {
+    return this.targetsService.deleteTarget(Number(id), req.user.id);
   }
 
   // ADMIN - stats

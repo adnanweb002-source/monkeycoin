@@ -10,5 +10,6 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
   imports: [NotificationsModule],
   controllers: [TreeController],
   providers: [TreeService, PrismaService, BinaryEngineService, WalletService, NowPaymentsService],
+  exports: [BinaryEngineService],
 })
 export class TreeModule {}

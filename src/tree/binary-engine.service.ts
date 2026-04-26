@@ -12,6 +12,8 @@ import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { DateTime } from 'luxon';
 import { APP_ZONE } from '../common/toronto-time';
 
+export const BINARY_DAILY_RUN_ACTION = 'BINARY_DAILY_RUN';
+
 @Injectable()
 export class BinaryEngineService {
   private readonly log = new Logger(BinaryEngineService.name);
@@ -54,9 +56,31 @@ export class BinaryEngineService {
     this.log.log('Binary payout cron registered at ' + cronExpr);
   }
 
+  /** YYYY-MM-DD in Toronto for the business credit day used in binary runs. */
+  async getBinaryPayoutDateKey(runAt?: Date): Promise<string> {
+    const d = await this.resolveCreditDate(runAt);
+    return DateTime.fromJSDate(d, { zone: APP_ZONE })
+      .startOf('day')
+      .toFormat('yyyy-LL-dd');
+  }
+
+  async hasCompletedBinaryRunForDateKey(dateKey: string): Promise<boolean> {
+    const row = await this.prisma.auditLog.findFirst({
+      where: {
+        action: BINARY_DAILY_RUN_ACTION,
+        after: { path: ['dateKey'], equals: dateKey } as any,
+      },
+      select: { id: true },
+    });
+    return !!row;
+  }
+
   async runDailyBinaryPayout(runDate?: Date) {
     // Determine credit day based on closing time
     const creditDate = await this.resolveCreditDate(runDate);
+    const dateKey = DateTime.fromJSDate(creditDate, { zone: APP_ZONE })
+      .startOf('day')
+      .toFormat('yyyy-LL-dd');
 
     const torontoNow = DateTime.now().setZone(APP_ZONE);
 
@@ -98,6 +122,18 @@ export class BinaryEngineService {
     for (const u of users) {
       await this.processUserBinary(u, rate, creditDate);
     }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: 'system',
+        action: BINARY_DAILY_RUN_ACTION,
+        after: {
+          dateKey,
+          creditDate: creditDate.toISOString(),
+          zone: APP_ZONE,
+        },
+      },
+    });
   }
 
   private parseRate(value?: string | null): Decimal {

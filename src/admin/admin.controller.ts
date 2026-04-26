@@ -9,6 +9,7 @@ import {
   Body,
   Query,
   Delete,
+  BadRequestException,
 } from '@nestjs/common';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
@@ -17,6 +18,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
 import { PackagesCronService } from 'src/packages/packages.cron';
+import { BinaryEngineService } from 'src/tree/binary-engine.service';
 import { WalletService } from 'src/wallets/wallet.service';
 import { SETTING_TYPE } from '@prisma/client';
 import { CreateRankDto } from './dto/create-rank.dto';
@@ -108,6 +110,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminUsersService,
     private readonly cron: PackagesCronService,
+    private readonly binaryEngine: BinaryEngineService,
     private readonly walletService: WalletService,
   ) {}
 
@@ -135,7 +138,42 @@ export class AdminController {
   @Roles('ADMIN')
   @UseGuards(JwtAuthGuard, RolesGuard)
   runNow() {
-    return this.cron.runDailyReturns();
+    return this.runPackageDailyWithGuard();
+  }
+
+  @Post('manual-package-daily')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  manualPackageDaily() {
+    return this.runPackageDailyWithGuard();
+  }
+
+  @Post('manual-binary-daily')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  async manualBinaryDaily() {
+    const dateKey = await this.binaryEngine.getBinaryPayoutDateKey();
+    if (await this.binaryEngine.hasCompletedBinaryRunForDateKey(dateKey)) {
+      throw new BadRequestException(
+        'Binary daily run for the current business day has already been completed.',
+      );
+    }
+    await this.binaryEngine.runDailyBinaryPayout();
+    return {
+      ok: true,
+      message: 'Binary daily run completed.',
+    };
+  }
+
+  private async runPackageDailyWithGuard() {
+    const ymd = this.cron.getTorontoDateKey();
+    if (await this.cron.hasCompletedPackageRunForDateKey(ymd)) {
+      throw new BadRequestException(
+        'Package daily run (credit + yield generation) for this Toronto business day has already been completed.',
+      );
+    }
+    await this.cron.runDailyReturns();
+    return { ok: true, message: 'Package daily run completed.' };
   }
 
   @Post('prune-system')

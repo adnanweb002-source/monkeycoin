@@ -658,6 +658,43 @@ export class WalletService {
         '/wallet/transactions',
       );
 
+      await tx.auditLog.create({
+        data: {
+          actorId: fromUserId,
+          actorType: 'user',
+          action: 'WALLET_TRANSFER_SENT',
+          entity: 'WalletTransaction',
+          before: {
+            walletType: fromWalletType,
+            balanceBefore: fromBalance.toFixed(),
+          },
+          after: {
+            amount: amt.toFixed(),
+            toMemberId: recipient.memberId,
+            txNumber: txNoOut,
+            balanceAfter: newFromBalance.toFixed(),
+          },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: recipient.id,
+          actorType: 'user',
+          action: 'WALLET_TRANSFER_RECEIVED',
+          entity: 'WalletTransaction',
+          before: {
+            walletType: fromWalletType,
+            balanceBefore: toBalance.toFixed(),
+          },
+          after: {
+            amount: amt.toFixed(),
+            fromMemberId: sender.memberId,
+            txNumber: txNoIn,
+            balanceAfter: newToBalance.toFixed(),
+          },
+        },
+      });
+
       return {
         from: {
           walletId: fromWallet.id,
@@ -864,6 +901,27 @@ export class WalletService {
         '/wallet/withdrawal-requests',
       );
 
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          actorType: 'user',
+          action: 'WITHDRAWAL_REQUEST_CREATED',
+          entity: 'WithdrawalRequest',
+          entityId: wr.id,
+          before: {
+            walletType,
+            balanceBefore: bal.toFixed(),
+          },
+          after: {
+            amount: amt.toFixed(),
+            method,
+            status: wr.status,
+            balanceAfter: newBalance.toFixed(),
+          },
+          ip,
+        },
+      });
+
       return {
         withdrawalId: wr.id,
         transactionId: transaction.txNumber,
@@ -990,6 +1048,22 @@ export class WalletService {
         },
       });
 
+      await tx.auditLog.create({
+        data: {
+          actorId: params.userId,
+          actorType: 'user',
+          action: 'DEPOSIT_REQUEST_CREATED',
+          entity: 'DepositRequest',
+          entityId: deposit.id,
+          after: {
+            amount: amt.toFixed(),
+            method: params.method ?? null,
+            reference: params.reference ?? null,
+            status: deposit.status,
+          },
+        },
+      });
+
       return deposit;
     });
   }
@@ -1034,6 +1108,23 @@ export class WalletService {
         'Deposit Initiated',
         `Your deposit of ${invoice.pay_amount} ${invoice.pay_currency} has been initiated. Please complete the payment to the address provided.`,
       );
+
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          actorType: 'user',
+          action: 'CRYPTO_DEPOSIT_INITIATED',
+          entity: 'ExternalDeposit',
+          entityId: dep.id,
+          after: {
+            paymentId: invoice.payment_id?.toString(),
+            amountFiat: dto.amount,
+            amountCrypto: invoice.pay_amount,
+            currency: dto.crypto,
+            status: invoice.payment_status,
+          },
+        },
+      });
 
       return {
         depositId: dep.id,
@@ -1346,6 +1437,24 @@ export class WalletService {
         'Withdrawal Request Cancelled',
         '/wallet/withdrawal-requests',
       );
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          actorType: 'user',
+          action: 'WITHDRAWAL_REQUEST_CANCELLED',
+          entity: 'WithdrawalRequest',
+          entityId: wr.id,
+          before: {
+            status: 'PENDING',
+            balanceBefore: bal.toFixed(),
+          },
+          after: {
+            status: 'CANCELLED',
+            amount: amt.toFixed(),
+            balanceAfter: newBalance.toFixed(),
+          },
+        },
+      });
       return { ok: true };
     });
   }
@@ -1869,9 +1978,24 @@ export class WalletService {
       '/profile?tab=wallets',
     );
 
-    return this.prisma.userWallet.create({
+    const created = await this.prisma.userWallet.create({
       data: { userId, supportedWalletId: sw.id, address: dto.address },
     });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'USER_WALLET_CREATED',
+        entity: 'UserWallet',
+        entityId: created.id,
+        after: {
+          supportedWalletId: sw.id,
+          supportedWalletName: sw.name,
+          address: dto.address,
+        },
+      },
+    });
+    return created;
   }
 
   async updateUserWallet(
@@ -1907,13 +2031,31 @@ export class WalletService {
       '/profile?tab=wallets',
     );
 
-    return this.prisma.userWallet.update({
+    const updated = await this.prisma.userWallet.update({
       where: { id: wallet.id },
       data: {
         address: dto.address,
         changeCount: wallet.changeCount + 1,
       },
     });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'USER_WALLET_UPDATED',
+        entity: 'UserWallet',
+        entityId: wallet.id,
+        before: {
+          address: wallet.address,
+          changeCount: wallet.changeCount,
+        },
+        after: {
+          address: updated.address,
+          changeCount: updated.changeCount,
+        },
+      },
+    });
+    return updated;
   }
 
   async deleteUserWallet(userId: number, walletId: number) {
@@ -1933,6 +2075,20 @@ export class WalletService {
       undefined,
       '/profile?tab=wallets',
     );
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'user',
+        action: 'USER_WALLET_DELETED',
+        entity: 'UserWallet',
+        entityId: walletId,
+        before: {
+          supportedWalletId: wallet.supportedWalletId,
+          address: wallet.address,
+        },
+        after: { deleted: true },
+      },
+    });
 
     return { ok: true };
   }

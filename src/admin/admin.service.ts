@@ -139,7 +139,7 @@ export class AdminUsersService {
     return totals;
   }
 
-  async suspendUser(userId: number) {
+  async suspendUser(userId: number, adminId?: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -163,6 +163,7 @@ export class AdminUsersService {
       // audit
       await tx.auditLog.create({
         data: {
+          actorId: adminId,
           actorType: 'admin',
           action: 'USER_SUSPENDED',
           entity: 'User',
@@ -175,7 +176,7 @@ export class AdminUsersService {
     return { ok: true, status: 'SUSPENDED' };
   }
 
-  async activateUser(userId: number) {
+  async activateUser(userId: number, adminId?: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -191,6 +192,7 @@ export class AdminUsersService {
 
       await tx.auditLog.create({
         data: {
+          actorId: adminId,
           actorType: 'admin',
           action: 'USER_ACTIVATED',
           entity: 'User',
@@ -449,13 +451,26 @@ export class AdminUsersService {
     return await this.prisma.adminSetting.findMany();
   }
 
-  async upsertSetting(key: SETTING_TYPE, value: string) {
+  async upsertSetting(key: SETTING_TYPE, value: string, adminId?: number) {
+    const prev = await this.prisma.adminSetting.findUnique({
+      where: { key },
+    });
     await this.prisma.adminSetting.upsert({
       where: { key },
       update: { value },
       create: {
         key,
         value,
+      },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        actorType: 'admin',
+        action: prev ? 'ADMIN_SETTING_UPDATED' : 'ADMIN_SETTING_CREATED',
+        entity: 'AdminSetting',
+        before: prev ? { key: prev.key, value: prev.value } : Prisma.JsonNull,
+        after: { key, value },
       },
     });
   }
@@ -802,7 +817,7 @@ export class AdminUsersService {
     return this.convertToCSV(rows);
   }
 
-  async createRank(dto: CreateRankDto) {
+  async createRank(dto: CreateRankDto, adminId?: number) {
     const exists = await this.prisma.rank.findUnique({
       where: { order: dto.order },
     });
@@ -813,21 +828,40 @@ export class AdminUsersService {
       );
     }
 
-    const rank = await this.prisma.rank.create({
-      data: {
-        name: dto.name,
-        requiredLeft: dto.requiredLeft,
-        requiredRight: dto.requiredRight,
-        rewardAmount: dto.rewardAmount,
-        rewardTitle: dto.rewardTitle,
-        order: dto.order,
-      },
+    const rank = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.rank.create({
+        data: {
+          name: dto.name,
+          requiredLeft: dto.requiredLeft,
+          requiredRight: dto.requiredRight,
+          rewardAmount: dto.rewardAmount,
+          rewardTitle: dto.rewardTitle,
+          order: dto.order,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'RANK_CREATED',
+          entity: 'Rank',
+          entityId: created.id,
+          after: {
+            id: created.id,
+            name: created.name,
+            order: created.order,
+            requiredLeft: created.requiredLeft.toString(),
+            requiredRight: created.requiredRight.toString(),
+          },
+        },
+      });
+      return created;
     });
 
     return { ok: true, rank };
   }
 
-  async updateRank(rankId: number, dto: CreateRankDto) {
+  async updateRank(rankId: number, dto: CreateRankDto, adminId?: number) {
     const rank = await this.prisma.rank.findUnique({
       where: { id: rankId },
     });
@@ -836,22 +870,48 @@ export class AdminUsersService {
       throw new NotFoundException('Rank not found');
     }
 
-    const updated = await this.prisma.rank.update({
-      where: { id: rankId },
-      data: {
-        name: dto.name,
-        requiredLeft: dto.requiredLeft,
-        requiredRight: dto.requiredRight,
-        rewardAmount: dto.rewardAmount,
-        rewardTitle: dto.rewardTitle,
-        order: dto.order,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.rank.update({
+        where: { id: rankId },
+        data: {
+          name: dto.name,
+          requiredLeft: dto.requiredLeft,
+          requiredRight: dto.requiredRight,
+          rewardAmount: dto.rewardAmount,
+          rewardTitle: dto.rewardTitle,
+          order: dto.order,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'RANK_UPDATED',
+          entity: 'Rank',
+          entityId: rankId,
+          before: {
+            id: rank.id,
+            name: rank.name,
+            order: rank.order,
+            requiredLeft: rank.requiredLeft.toString(),
+            requiredRight: rank.requiredRight.toString(),
+          },
+          after: {
+            id: next.id,
+            name: next.name,
+            order: next.order,
+            requiredLeft: next.requiredLeft.toString(),
+            requiredRight: next.requiredRight.toString(),
+          },
+        },
+      });
+      return next;
     });
 
     return { ok: true, rank: updated };
   }
 
-  async deleteRank(rankId: number) {
+  async deleteRank(rankId: number, adminId?: number) {
     const rank = await this.prisma.rank.findUnique({
       where: { id: rankId },
     });
@@ -860,14 +920,31 @@ export class AdminUsersService {
       throw new NotFoundException('Rank not found');
     }
 
-    await this.prisma.rank.delete({
-      where: { id: rankId },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rank.delete({
+        where: { id: rankId },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'RANK_DELETED',
+          entity: 'Rank',
+          entityId: rank.id,
+          before: {
+            id: rank.id,
+            name: rank.name,
+            order: rank.order,
+          },
+          after: { deleted: true },
+        },
+      });
     });
 
     return { ok: true };
   }
 
-  async updateUserProfile(userId: number, dto: UpdateUserDto) {
+  async updateUserProfile(userId: number, dto: UpdateUserDto, adminId?: number) {
     const data: any = {};
 
     if (dto.name !== undefined) {
@@ -884,19 +961,46 @@ export class AdminUsersService {
       data.phoneNumber = dto.phone;
     }
 
-    const user = await this.prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data,
+    const before = await this.prisma.user.findUnique({
+      where: { id: userId },
       select: {
         id: true,
         firstName: true,
         lastName: true,
         email: true,
         phoneNumber: true,
-        updatedAt: true,
       },
+    });
+    if (!before) {
+      throw new NotFoundException('User not found');
+    }
+    const user = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: {
+          id: userId,
+        },
+        data,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phoneNumber: true,
+          updatedAt: true,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'USER_PROFILE_UPDATED',
+          entity: 'User',
+          entityId: userId,
+          before,
+          after: updated,
+        },
+      });
+      return updated;
     });
 
     return {
@@ -905,7 +1009,7 @@ export class AdminUsersService {
     };
   }
 
-  async createDepositBonus(dto: CreateDepositBonusDto) {
+  async createDepositBonus(dto: CreateDepositBonusDto, adminId?: number) {
     const start = parseAdminDateStart(dto.startDate);
     const end = parseAdminDateEnd(dto.endDate);
 
@@ -926,12 +1030,25 @@ export class AdminUsersService {
       );
     }
 
-    const bonus = await this.prisma.depositBonus.create({
-      data: {
-        bonusPercentage: dto.bonusPercentage,
-        startDate: start,
-        endDate: end,
-      },
+    const bonus = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.depositBonus.create({
+        data: {
+          bonusPercentage: dto.bonusPercentage,
+          startDate: start,
+          endDate: end,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'DEPOSIT_BONUS_CREATED',
+          entity: 'DepositBonus',
+          entityId: created.id,
+          after: created,
+        },
+      });
+      return created;
     });
 
     return { ok: true, bonus };
@@ -945,7 +1062,7 @@ export class AdminUsersService {
     });
   }
 
-  async updateDepositBonus(id: number, dto: UpdateDepositBonusDto) {
+  async updateDepositBonus(id: number, dto: UpdateDepositBonusDto, adminId?: number) {
     const bonus = await this.prisma.depositBonus.findUnique({
       where: { id },
     });
@@ -977,21 +1094,35 @@ export class AdminUsersService {
       );
     }
 
-    const updated = await this.prisma.depositBonus.update({
-      where: { id },
-      data: {
-        bonusPercentage: dto.bonusPercentage,
-        startDate: dto.startDate
-          ? parseAdminDateStart(dto.startDate)
-          : undefined,
-        endDate: dto.endDate ? parseAdminDateEnd(dto.endDate) : undefined,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.depositBonus.update({
+        where: { id },
+        data: {
+          bonusPercentage: dto.bonusPercentage,
+          startDate: dto.startDate
+            ? parseAdminDateStart(dto.startDate)
+            : undefined,
+          endDate: dto.endDate ? parseAdminDateEnd(dto.endDate) : undefined,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'DEPOSIT_BONUS_UPDATED',
+          entity: 'DepositBonus',
+          entityId: id,
+          before: bonus,
+          after: next,
+        },
+      });
+      return next;
     });
 
     return { ok: true, bonus: updated };
   }
 
-  async deleteDepositBonus(id: number) {
+  async deleteDepositBonus(id: number, adminId?: number) {
     const bonus = await this.prisma.depositBonus.findUnique({
       where: { id },
     });
@@ -1000,8 +1131,21 @@ export class AdminUsersService {
       throw new NotFoundException('Deposit bonus not found');
     }
 
-    await this.prisma.depositBonus.delete({
-      where: { id },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.depositBonus.delete({
+        where: { id },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'DEPOSIT_BONUS_DELETED',
+          entity: 'DepositBonus',
+          entityId: id,
+          before: bonus,
+          after: { deleted: true },
+        },
+      });
     });
 
     return { ok: true };
@@ -1292,11 +1436,11 @@ export class AdminUsersService {
           if (sponsorWallet) {
             const current = new Decimal(sponsorWallet.balance.toString());
             const next = current.minus(referralAmount);
-            if (next.lt(0)) {
-              throw new BadRequestException(
-                `Sponsor P_WALLET lacks balance for referral reversal on purchase ${purchase.id}`,
-              );
-            }
+            // if (next.lt(0)) {
+            //   throw new BadRequestException(
+            //     `Sponsor P_WALLET lacks balance for referral reversal on purchase ${purchase.id}`,
+            //   );
+            // }
             await tx.wallet.update({
               where: { id: sponsorWallet.id },
               data: { balance: next.toFixed(2) },
@@ -1411,6 +1555,78 @@ export class AdminUsersService {
       ok: true,
       message: 'Package purchase deleted and reversals applied',
       purchaseId,
+    };
+  }
+
+  async getAuditLogs(take = 20, skip = 0, memberId?: string) {
+    const safeTake = Number.isFinite(take) ? Math.min(Math.max(take, 1), 200) : 20;
+    const safeSkip = Number.isFinite(skip) ? Math.max(skip, 0) : 0;
+    const memberIdFilter = memberId?.trim();
+
+    let actorIds: number[] = [];
+    if (memberIdFilter) {
+      const users = await this.prisma.user.findMany({
+        where: {
+          memberId: {
+            contains: memberIdFilter,
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true },
+      });
+      actorIds = users.map((u) => u.id);
+      if (!actorIds.length) {
+        return {
+          take: safeTake,
+          skip: safeSkip,
+          memberId: memberIdFilter,
+          pageCount: 0,
+          totalCount: 0,
+          data: [],
+        };
+      }
+    }
+
+    const where: Prisma.AuditLogWhereInput = memberIdFilter
+      ? {
+          OR: [
+            { actorId: { in: actorIds } },
+            {
+              entity: 'User',
+              entityId: { in: actorIds },
+            },
+          ],
+        }
+      : {};
+
+    const [data, totalCount] = await this.prisma.$transaction([
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: safeSkip,
+        take: safeTake,
+        include: {
+          actor: {
+            select: {
+              id: true,
+              memberId: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return {
+      take: safeTake,
+      skip: safeSkip,
+      memberId: memberIdFilter ?? null,
+      pageCount: data.length,
+      totalCount,
+      data,
     };
   }
 }

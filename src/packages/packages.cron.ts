@@ -9,6 +9,9 @@ import { NotificationsService } from 'src/notifications/notifcations.service';
 import { DateTime } from 'luxon';
 import { APP_ZONE } from '../common/toronto-time';
 
+export const PACKAGE_DAILY_CREDIT_ACTION = 'PACKAGE_DAILY_CREDIT_RUN';
+export const PACKAGE_DAILY_GENERATE_ACTION = 'PACKAGE_DAILY_GENERATE_RUN';
+
 @Injectable()
 export class PackagesCronService {
   private readonly log = new Logger(PackagesCronService.name);
@@ -21,6 +24,58 @@ export class PackagesCronService {
   ) {
     this.registerClosingCron();
     this.registerOpeningCron();
+  }
+
+  /** Toronto calendar day key (YYYY-MM-DD) for business-date checks. */
+  getTorontoDateKey(d = DateTime.now().setZone(APP_ZONE)): string {
+    return d.toFormat('yyyy-LL-dd');
+  }
+
+  /**
+   * A full "package day" is done when both credit (opening) and generate (closing)
+   * runs have been recorded for this date key (including generate skipped e.g. Sunday).
+   */
+  async hasCompletedPackageRunForDateKey(dateKey: string): Promise<boolean> {
+    const [credit, gen] = await Promise.all([
+      this.prisma.auditLog.findFirst({
+        where: {
+          action: PACKAGE_DAILY_CREDIT_ACTION,
+          after: { path: ['dateKey'], equals: dateKey } as any,
+        },
+        select: { id: true },
+      }),
+      this.prisma.auditLog.findFirst({
+        where: {
+          action: PACKAGE_DAILY_GENERATE_ACTION,
+          after: { path: ['dateKey'], equals: dateKey } as any,
+        },
+        select: { id: true },
+      }),
+    ]);
+    return !!(credit && gen);
+  }
+
+  private async recordPackageCreditRun(dateKey: string) {
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: 'system',
+        action: PACKAGE_DAILY_CREDIT_ACTION,
+        after: { dateKey, zone: APP_ZONE },
+      },
+    });
+  }
+
+  private async recordPackageGenerateRun(
+    dateKey: string,
+    extra?: { skipped?: string },
+  ) {
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: 'system',
+        action: PACKAGE_DAILY_GENERATE_ACTION,
+        after: { dateKey, zone: APP_ZONE, ...extra },
+      },
+    });
   }
 
   private async getCronTime(settingKey: SETTING_TYPE, fallbackTime: string) {
@@ -182,18 +237,21 @@ export class PackagesCronService {
   async runDailyReturnCredit() {
     const torontoNow = DateTime.now().setZone(APP_ZONE);
     const creditDate = torontoNow.startOf('day').toJSDate();
+    const dateKey = this.getTorontoDateKey(torontoNow);
 
     this.log.log(
       'Running opening package credits for ' + creditDate.toDateString(),
     );
 
     await this.creditPendingReturns(creditDate);
+    await this.recordPackageCreditRun(dateKey);
 
     this.log.log('Opening package credit run complete');
   }
 
   async runDailyReturnGeneration() {
     const torontoNow = DateTime.now().setZone(APP_ZONE);
+    const dateKey = this.getTorontoDateKey(torontoNow);
 
     // Normalize date (strip time)
     const creditDate = torontoNow.startOf('day').toJSDate();
@@ -205,6 +263,7 @@ export class PackagesCronService {
       this.log.debug(
         'Sunday — skipping package earnings generation',
       );
+      await this.recordPackageGenerateRun(dateKey, { skipped: 'SUNDAY' });
       return;
     }
 
@@ -225,6 +284,9 @@ export class PackagesCronService {
       this.log.debug(
         `Holiday (${holiday.title}) — skipping package earnings generation run.`,
       );
+      await this.recordPackageGenerateRun(dateKey, {
+        skipped: `HOLIDAY:${holiday.title}`,
+      });
       return;
     }
 
@@ -234,6 +296,7 @@ export class PackagesCronService {
 
     // Generate today's ROI at closing (but DON'T credit)
     await this.generateTodayReturns(creditDate);
+    await this.recordPackageGenerateRun(dateKey);
 
     this.log.log('Closing package yield generation run complete');
   }

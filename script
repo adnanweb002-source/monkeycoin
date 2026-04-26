@@ -1,0 +1,67 @@
+-- =============================================================================
+-- Reset package income: reverse ROI_CREDIT package daily returns, then clear logs
+-- - Matches wallet rows created by package ROI cron: ROI_CREDIT + daily return purpose
+-- - Adjust the purpose filter if you ever change the cron's purpose string
+-- =============================================================================
+BEGIN;
+-- 0) See what will be affected (run alone first if you want a preview)
+-- SELECT "walletId", SUM(amount) AS to_reverse, COUNT(*) AS tx_count
+-- FROM "public"."wallet_transactions"
+-- WHERE type = 'ROI_CREDIT'
+--   AND direction = 'CREDIT'
+--   AND COALESCE(purpose, '') LIKE 'Daily return for package%'
+-- GROUP BY "walletId"
+-- ORDER BY "walletId";
+-- 1) Fail if any wallet would go negative after reversal
+DO $$
+DECLARE
+  bad_count integer;
+BEGIN
+  WITH per_wallet AS (
+    SELECT
+      t."walletId" AS wid,
+      SUM(t.amount) AS to_subtract
+    FROM "public"."wallet_transactions" t
+    WHERE t.type = 'ROI_CREDIT'::"public"."TransactionType"
+      AND t.direction = 'CREDIT'
+      AND COALESCE(t.purpose, '') LIKE 'Daily return for package%'
+    GROUP BY t."walletId"
+  )
+  SELECT COUNT(*)::integer INTO bad_count
+  FROM "public"."wallets" w
+  INNER JOIN per_wallet p ON p.wid = w.id
+  WHERE w.balance < p.to_subtract;
+  IF bad_count > 0 THEN
+    RAISE EXCEPTION
+      'Aborted: % wallet(s) would have negative balance after reversing package ROI. '
+      'Spend/withdrawal may have used those funds. Inspect wallets and transactions.',
+      bad_count;
+  END IF;
+END;
+$$;
+-- 2) Subtract credited amounts from each affected wallet
+WITH per_wallet AS (
+  SELECT
+    t."walletId" AS wid,
+    SUM(t.amount) AS to_subtract
+  FROM "public"."wallet_transactions" t
+  WHERE t.type = 'ROI_CREDIT'::"public"."TransactionType"
+    AND t.direction = 'CREDIT'
+    AND COALESCE(t.purpose, '') LIKE 'Daily return for package%'
+  GROUP BY t."walletId"
+)
+UPDATE "public"."wallets" w
+SET balance = w.balance - p.to_subtract
+FROM per_wallet p
+WHERE w.id = p.wid;
+-- 3) Remove the corresponding ledger rows
+DELETE FROM "public"."wallet_transactions" t
+WHERE t.type = 'ROI_CREDIT'::"public"."TransactionType"
+  AND t.direction = 'CREDIT'
+  AND COALESCE(t.purpose, '') LIKE 'Daily return for package%';
+-- 4) Clear all package income logs (pending + any credited metadata)
+TRUNCATE TABLE "public"."package_income_logs" RESTART IDENTITY;
+-- 5) Optional: remove ROI credit notifications from the cron
+-- DELETE FROM "public"."Notification"
+-- WHERE title = 'Daily Package Return';
+COMMIT;

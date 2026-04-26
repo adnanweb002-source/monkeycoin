@@ -155,6 +155,28 @@ export class RankService {
         },
       });
 
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          actorType: 'user',
+          action: 'RANK_REWARD_CLAIMED',
+          entity: 'RankRewardLog',
+          before: {
+            rankLeftVolume: left.toString(),
+            rankRightVolume: right.toString(),
+            currentRank: user.currentRank,
+          },
+          after: {
+            rankId: rank.id,
+            rankName: rank.name,
+            rewardAmount: rank.rewardAmount?.toString() ?? '0',
+            currentRank: rank.order,
+            rankLeftVolume: left.minus(rank.requiredLeft).toString(),
+            rankRightVolume: right.minus(rank.requiredRight).toString(),
+          },
+        },
+      });
+
       return {
         message: `${rank.name} reward claimed`,
       };

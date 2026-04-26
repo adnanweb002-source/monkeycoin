@@ -103,27 +103,49 @@ export class TargetsService {
   }
 
   // ADMIN — update target
-  async updateTarget(id: number, dto: UpdateTargetDto) {
+  async updateTarget(id: number, dto: UpdateTargetDto, adminId?: number) {
     const target = await this.prisma.targetAssignment.findUnique({
       where: { id },
     });
 
     if (!target) throw new NotFoundException('Target not found');
 
-    const data = {};
-
-    return this.prisma.targetAssignment.update({
-      where: { id },
-      data: {
-        multiplier: dto.multiplier,
-        targetAmount: new Decimal(dto.targetAmount),
-        salesType: dto.salesType,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.targetAssignment.update({
+        where: { id },
+        data: {
+          multiplier: dto.multiplier,
+          targetAmount: new Decimal(dto.targetAmount),
+          salesType: dto.salesType,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'TARGET_UPDATED',
+          entity: 'TargetAssignment',
+          entityId: id,
+          before: {
+            multiplier: target.multiplier,
+            targetAmount: target.targetAmount.toString(),
+            salesType: target.salesType,
+            completed: target.completed,
+          },
+          after: {
+            multiplier: updated.multiplier,
+            targetAmount: updated.targetAmount.toString(),
+            salesType: updated.salesType,
+            completed: updated.completed,
+          },
+        },
+      });
+      return updated;
     });
   }
 
   // ADMIN — delete target
-  async deleteTarget(id: number) {
+  async deleteTarget(id: number, adminId?: number) {
     const target = await this.prisma.targetAssignment.findUnique({
       where: { id },
     });
@@ -161,6 +183,24 @@ export class TargetsService {
       // Delete associated target purchase
       await tx.packagePurchase.delete({
         where: { id: target.purchaseId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'TARGET_DELETED',
+          entity: 'TargetAssignment',
+          entityId: id,
+          before: {
+            userId: target.userId,
+            purchaseId: target.purchaseId,
+            targetAmount: target.targetAmount.toString(),
+            achieved: target.achieved.toString(),
+            completed: target.completed,
+          },
+          after: { deleted: true },
+        },
       });
     });
   }
@@ -288,6 +328,22 @@ export class TargetsService {
     };
 
     await this.packageService.purchasePackage(userId, Role.ADMIN, purchaseDto);
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        actorType: 'admin',
+        action: 'TARGET_ASSIGNED',
+        entity: 'TargetAssignment',
+        after: {
+          memberId: dto.memberId,
+          packageId: pkg.id,
+          packageAmount: dto.packageAmount,
+          targetMultiplier: dto.targetMultiplier,
+          targetType: dto.targetType,
+        },
+      },
+    });
 
     return {
       message: 'Target assigned successfully',

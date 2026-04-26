@@ -45,13 +45,13 @@ export class AdminUsersController {
   }
 
   @Patch(':userId/suspend')
-  suspend(@Param('userId') userId: string) {
-    return this.svc.suspendUser(Number(userId));
+  suspend(@Param('userId') userId: string, @Req() req) {
+    return this.svc.suspendUser(Number(userId), req.user.id);
   }
 
   @Patch(':userId/activate')
-  activate(@Param('userId') userId: string) {
-    return this.svc.activateUser(Number(userId));
+  activate(@Param('userId') userId: string, @Req() req) {
+    return this.svc.activateUser(Number(userId), req.user.id);
   }
 
   @Patch(':userId/disable-2fa')
@@ -94,8 +94,12 @@ export class AdminUsersController {
     );
   }
   @Patch(':userId/profile')
-  updateProfile(@Param('userId') userId: string, @Body() dto: UpdateUserDto) {
-    return this.svc.updateUserProfile(Number(userId), dto);
+  updateProfile(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserDto,
+    @Req() req,
+  ) {
+    return this.svc.updateUserProfile(Number(userId), dto, req.user.id);
   }
 }
 
@@ -150,8 +154,12 @@ export class AdminController {
   @Post('settings/upsert')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  upsertSetting(@Body('key') key: SETTING_TYPE, @Body('value') value: string) {
-    return this.adminService.upsertSetting(key, value);
+  upsertSetting(
+    @Body('key') key: SETTING_TYPE,
+    @Body('value') value: string,
+    @Req() req,
+  ) {
+    return this.adminService.upsertSetting(key, value, req.user.id);
   }
 
   @Get('settings/get')
@@ -177,22 +185,22 @@ export class AdminController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('create-rank')
-  createRank(@Body() dto: CreateRankDto) {
-    return this.adminService.createRank(dto);
+  createRank(@Body() dto: CreateRankDto, @Req() req) {
+    return this.adminService.createRank(dto, req.user.id);
   }
 
   @Patch('/ranks/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  updateRank(@Param('id') id: number, @Body() dto: CreateRankDto) {
-    return this.adminService.updateRank(Number(id), dto);
+  updateRank(@Param('id') id: number, @Body() dto: CreateRankDto, @Req() req) {
+    return this.adminService.updateRank(Number(id), dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete('/ranks/:id')
-  deleteRank(@Param('id') id: number) {
-    return this.adminService.deleteRank(Number(id));
+  deleteRank(@Param('id') id: number, @Req() req) {
+    return this.adminService.deleteRank(Number(id), req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -205,8 +213,8 @@ export class AdminController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('deposit-bonus')
-  createDepositBonus(@Body() dto: CreateDepositBonusDto) {
-    return this.adminService.createDepositBonus(dto);
+  createDepositBonus(@Body() dto: CreateDepositBonusDto, @Req() req) {
+    return this.adminService.createDepositBonus(dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -222,15 +230,31 @@ export class AdminController {
   updateDepositBonus(
     @Param('id') id: number,
     @Body() dto: UpdateDepositBonusDto,
+    @Req() req,
   ) {
-    return this.adminService.updateDepositBonus(id, dto);
+    return this.adminService.updateDepositBonus(id, dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Delete('deposit-bonus/:id')
-  deleteDepositBonus(@Param('id') id: number) {
-    return this.adminService.deleteDepositBonus(id);
+  deleteDepositBonus(@Param('id') id: number, @Req() req) {
+    return this.adminService.deleteDepositBonus(id, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('audit-logs')
+  getAuditLogs(
+    @Query('take') take?: string,
+    @Query('skip') skip?: string,
+    @Query('memberId') memberId?: string,
+  ) {
+    return this.adminService.getAuditLogs(
+      Number(take ?? 20),
+      Number(skip ?? 0),
+      memberId,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

@@ -76,13 +76,6 @@ export class BinaryEngineService {
       return;
     }
 
-    // Skip Sat/Sun
-    const day = torontoNow.weekday;
-    if (day === 7) {
-      this.log.debug('Weekend — skipping binary payout run');
-      return;
-    }
-
     console.log('Running Binary Payout for', creditDate.toDateString());
 
     const rate = await this.getBinaryRate();

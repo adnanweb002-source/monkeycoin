@@ -245,6 +245,7 @@ export class PackagesService {
       if (!parent) break;
 
       const field = current.position === 'LEFT' ? 'leftBv' : 'rightBv';
+      const persistentField = current.position === 'LEFT' ? 'persistentLeftBv' : 'persistentRightBv';
       const rankField =
         current.position === 'LEFT' ? 'rankLeftVolume' : 'rankRightVolume';
 
@@ -253,6 +254,7 @@ export class PackagesService {
         data: {
           [field]: { increment: bv.toNumber() },
           [rankField]: { increment: bv.toNumber() },
+          [persistentField]: { increment: bv.toNumber() },
         },
       });
 

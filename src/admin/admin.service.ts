@@ -29,6 +29,8 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import Decimal from 'decimal.js';
 import { generateTxNumber } from 'src/wallets/utils';
+import { DateTime } from 'luxon';
+import { APP_ZONE } from 'src/common/toronto-time';
 
 @Injectable()
 export class AdminUsersService {
@@ -38,6 +40,166 @@ export class AdminUsersService {
     private authService: AuthService,
     private twoFactorService: TwoFactorService,
   ) { }
+
+  private static readonly DEFAULT_GROWTH_POINTS = 7;
+  private static readonly MAX_GROWTH_POINTS = 52;
+
+  private normalizeGrowthCount(value: number | undefined, label: string): number {
+    if (value === undefined || value === null || Number.isNaN(value)) {
+      return AdminUsersService.DEFAULT_GROWTH_POINTS;
+    }
+    const normalized = Math.floor(Number(value));
+    if (normalized < 1) {
+      throw new BadRequestException(`${label} must be at least 1`);
+    }
+    if (normalized > AdminUsersService.MAX_GROWTH_POINTS) {
+      throw new BadRequestException(
+        `${label} cannot be greater than ${AdminUsersService.MAX_GROWTH_POINTS}`,
+      );
+    }
+    return normalized;
+  }
+
+  private buildTimeWindows(unit: 'day' | 'week' | 'month', count: number) {
+    const cursor = DateTime.now().setZone(APP_ZONE).startOf(unit);
+    const windows: Array<{
+      label: string;
+      periodStart: string;
+      periodEnd: string;
+      from: Date;
+      to: Date;
+    }> = [];
+
+    for (let idx = count - 1; idx >= 0; idx--) {
+      const start = cursor.minus({ [`${unit}s`]: idx });
+      const end = start.plus({ [`${unit}s`]: 1 });
+      windows.push({
+        label:
+          unit === 'day'
+            ? start.toISODate() ?? start.toISO() ?? ''
+            : unit === 'week'
+              ? `W-${start.toFormat('kkkk-ww')}`
+              : start.toFormat('yyyy-MM'),
+        periodStart: start.toISO() ?? '',
+        periodEnd: end.toISO() ?? '',
+        from: start.toUTC().toJSDate(),
+        to: end.toUTC().toJSDate(),
+      });
+    }
+
+    return windows;
+  }
+
+  private toGrowthPercent(current: number, previous: number): number | null {
+    if (previous === 0) {
+      return current === 0 ? 0 : null;
+    }
+    return Number((((current - previous) / previous) * 100).toFixed(2));
+  }
+
+  private async buildGrowthSeries(
+    unit: 'day' | 'week' | 'month',
+    count: number,
+    resolver: (from: Date, to: Date) => Promise<number>,
+  ) {
+    const windows = this.buildTimeWindows(unit, count);
+    const totals = await Promise.all(
+      windows.map((window) => resolver(window.from, window.to)),
+    );
+
+    return windows.map((window, index) => {
+      const total = Number(totals[index].toFixed(2));
+      const previousTotal = index === 0 ? null : Number(totals[index - 1].toFixed(2));
+      return {
+        label: window.label,
+        periodStart: window.periodStart,
+        periodEnd: window.periodEnd,
+        total,
+        previousTotal,
+        growthPercent:
+          previousTotal === null
+            ? null
+            : this.toGrowthPercent(total, previousTotal),
+      };
+    });
+  }
+
+  async getDepositGrowth(days?: number, weeks?: number, months?: number) {
+    const safeDays = this.normalizeGrowthCount(days, 'days');
+    const safeWeeks = this.normalizeGrowthCount(weeks, 'weeks');
+    const safeMonths = this.normalizeGrowthCount(months, 'months');
+
+    const sumDeposits = async (from: Date, to: Date) => {
+      const res = await this.prisma.externalDeposit.aggregate({
+        where: {
+          status: 'finished',
+          createdAt: {
+            gte: from,
+            lt: to,
+          },
+        },
+        _sum: {
+          fiatAmount: true,
+        },
+      });
+      return Number(res._sum.fiatAmount ?? 0);
+    };
+
+    const [dod, wow, mom] = await Promise.all([
+      this.buildGrowthSeries('day', safeDays, sumDeposits),
+      this.buildGrowthSeries('week', safeWeeks, sumDeposits),
+      this.buildGrowthSeries('month', safeMonths, sumDeposits),
+    ]);
+
+    return {
+      metric: 'deposits',
+      timezone: APP_ZONE,
+      lookback: {
+        days: safeDays,
+        weeks: safeWeeks,
+        months: safeMonths,
+      },
+      series: { dod, wow, mom },
+    };
+  }
+
+  async getPackagePurchaseGrowth(days?: number, weeks?: number, months?: number) {
+    const safeDays = this.normalizeGrowthCount(days, 'days');
+    const safeWeeks = this.normalizeGrowthCount(weeks, 'weeks');
+    const safeMonths = this.normalizeGrowthCount(months, 'months');
+
+    const sumPackagePurchases = async (from: Date, to: Date) => {
+      const res = await this.prisma.packagePurchase.aggregate({
+        where: {
+          createdAt: {
+            gte: from,
+            lt: to,
+          },
+        },
+        _sum: {
+          amount: true,
+        },
+      });
+      return Number(res._sum.amount ?? 0);
+    };
+
+    const [dod, wow, mom] = await Promise.all([
+      this.buildGrowthSeries('day', safeDays, sumPackagePurchases),
+      this.buildGrowthSeries('week', safeWeeks, sumPackagePurchases),
+      this.buildGrowthSeries('month', safeMonths, sumPackagePurchases),
+    ]);
+
+    return {
+      metric: 'packagePurchases',
+      timezone: APP_ZONE,
+      lookback: {
+        days: safeDays,
+        weeks: safeWeeks,
+        months: safeMonths,
+      },
+      series: { dod, wow, mom },
+    };
+  }
 
   async getAllUsers(
     take: number,

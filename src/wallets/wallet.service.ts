@@ -529,6 +529,14 @@ export class WalletService {
         'Withdrawals have been restricted for this account. Contact support',
       );
 
+    if (sender.lockWithdrawalsTillTarget) {
+      if (fromWalletType === 'E_WALLET') {
+        throw new ForbiddenException(
+          'Please reach your target to transfer funds from Earning Wallet',
+        );
+      }
+    }
+
     const transferSetting = await this.prisma.adminSetting.findUnique({
       where: { key: SETTING_TYPE.TRANSFER_TYPE },
     });
@@ -1796,7 +1804,7 @@ export class WalletService {
           where: { sponsorId: userId },
         });
         const downLineUserIds = downLineUsers.map(user => user.id);
-        where.OR = [{ buyerId: {in: downLineUserIds}, userId: { not: userId } }, {buyerId: userId}];
+        where.OR = [{ buyerId: { in: downLineUserIds }, userId: { not: userId } }, { buyerId: userId }];
       }
 
       if (from || to) {

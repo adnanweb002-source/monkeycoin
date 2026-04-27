@@ -80,6 +80,10 @@ enum TransactionType {
     leftBv         Decimal   @default(0) @map("left_bv")
     rightBv        Decimal   @default(0) @map("right_bv")
 
+    persistentLeftBv   Decimal   @default(0) @map("persistent_left_bv")
+    persistentRightBv   Decimal   @default(0) @map("persistent_right_bv")
+
+
     createdAt      DateTime  @default(now()) @map("created_at")
     updatedAt      DateTime  @updatedAt @map("updated_at")
 

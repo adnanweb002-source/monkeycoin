@@ -13,6 +13,8 @@ type DbRow = {
   last_name: string;
   left_bv: Decimal;
   right_bv: Decimal;
+  persistent_left_bv: Decimal;
+  persistent_right_bv: Decimal;
   phone_number: string | null;
   member_id: string | null;
   email: string | null;
@@ -62,6 +64,8 @@ WITH RECURSIVE subtree AS (
     u.last_name,
     u.left_bv,
     u.right_bv,
+    u.persistent_left_bv,
+    u.persistent_right_bv,
     u.phone_number,
     u.member_id,
     u.email,
@@ -89,6 +93,8 @@ WITH RECURSIVE subtree AS (
     u.last_name,
     u.left_bv,
     u.right_bv,
+    u.persistent_left_bv,
+    u.persistent_right_bv,
     u.phone_number,
     u.member_id,
     u.email,
@@ -173,6 +179,8 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
         lastName: r.last_name,
         leftBv: r.left_bv,
         rightBv: r.right_bv,
+        persistentLeftBv: r.persistent_left_bv,
+        persistentRightBv: r.persistent_right_bv,
         memberId: r.member_id,
         email: r.email ?? undefined,
         position: r.position as 'LEFT' | 'RIGHT' | null,
@@ -221,6 +229,8 @@ LEFT JOIN package_totals pt ON pt."userId" = s.id;
         lastName: n.lastName,
         leftBv: n.leftBv,
         rightBv: n.rightBv,
+        persistentLeftBv: n.persistentLeftBv,
+        persistentRightBv: n.persistentRightBv,
         memberId: n.memberId,
         email: n.email,
         position: n.position,

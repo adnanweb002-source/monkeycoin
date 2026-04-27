@@ -300,6 +300,18 @@ export class TargetsService {
       throw new NotFoundException('User not found');
     }
 
+    // check if user has already a target
+    const existingTarget = await this.prisma.targetAssignment.findFirst({
+      where: {
+        userId,
+        completed: false,
+      },
+    });
+    
+    if (existingTarget) {
+      throw new BadRequestException('User already has an active target');
+    }
+
     // find package based on amount
     const pkg = await this.prisma.package.findFirst({
       where: {

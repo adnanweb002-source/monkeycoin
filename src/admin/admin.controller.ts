@@ -250,6 +250,36 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Get('/growth/deposits')
+  getDepositGrowth(
+    @Query('days') days?: string,
+    @Query('weeks') weeks?: string,
+    @Query('months') months?: string,
+  ) {
+    return this.adminService.getDepositGrowth(
+      days ? Number(days) : undefined,
+      weeks ? Number(weeks) : undefined,
+      months ? Number(months) : undefined,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('/growth/package-purchases')
+  getPackagePurchaseGrowth(
+    @Query('days') days?: string,
+    @Query('weeks') weeks?: string,
+    @Query('months') months?: string,
+  ) {
+    return this.adminService.getPackagePurchaseGrowth(
+      days ? Number(days) : undefined,
+      weeks ? Number(weeks) : undefined,
+      months ? Number(months) : undefined,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Post('deposit-bonus')
   createDepositBonus(@Body() dto: CreateDepositBonusDto, @Req() req) {
     return this.adminService.createDepositBonus(dto, req.user.id);

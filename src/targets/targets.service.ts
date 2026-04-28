@@ -303,7 +303,7 @@ export class TargetsService {
     // check if user has already a target
     const existingTarget = await this.prisma.targetAssignment.findFirst({
       where: {
-        userId,
+        userId: user.id,
         completed: false,
       },
     });

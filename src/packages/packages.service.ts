@@ -58,6 +58,7 @@ export class PackagesService {
     const parts: { wallet: WalletType; amount: string }[] = [];
   
     let total = new Decimal(0);
+    const splitAmounts: Partial<Record<WalletType, Decimal>> = {};
 
     if (lockWithdrawalsTillTarget) {
       if (split[WalletType.E_WALLET]) {
@@ -69,21 +70,8 @@ export class PackagesService {
       const amount = new Decimal(amt).toDecimalPlaces(2, Decimal.ROUND_DOWN);
   
       if (amount.lte(0)) continue;
-  
-      // 🔹 Min % rule (optional but preserved)
-      if (buyerRole !== Role.ADMIN) {
-        const minPct = rules[wallet] || 0;
-  
-        if (minPct > 0) {
-          const pct = amount.div(totalAmount).mul(100);
-  
-          if (pct.lt(minPct)) {
-            throw new BadRequestException(
-              `${wallet} must be at least ${minPct}%`
-            );
-          }
-        }
-      }
+
+      splitAmounts[wallet as WalletType] = amount;
   
       parts.push({
         wallet: wallet as WalletType,
@@ -91,6 +79,24 @@ export class PackagesService {
       });
   
       total = total.plus(amount);
+    }
+
+    // Enforce configured min percentages even when a wallet is omitted in split.
+    if (buyerRole !== Role.ADMIN) {
+      for (const [wallet, minPctRaw] of Object.entries(rules) as Array<
+        [WalletType, Decimal]
+      >) {
+        const minPct = new Decimal(minPctRaw ?? 0);
+        if (minPct.lte(0)) continue;
+
+        const amount = splitAmounts[wallet] ?? new Decimal(0);
+        const pct = amount.div(totalAmount).mul(100);
+        if (pct.lt(minPct)) {
+          throw new BadRequestException(
+            `${wallet} must be at least ${minPct.toFixed()}%`,
+          );
+        }
+      }
     }
   
     // 🔴 STRICT TOTAL CHECK

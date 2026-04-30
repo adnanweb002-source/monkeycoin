@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import {
   Position,
   Status,
@@ -32,6 +32,11 @@ import Decimal from 'decimal.js';
 import { generateTxNumber } from 'src/wallets/utils';
 import { DateTime } from 'luxon';
 import { APP_ZONE } from 'src/common/toronto-time';
+import {
+  ADMIN_WALLET_ADJUST_KEY_MAX_AGE_MS,
+  signAdminWalletAdjustDynamicKey,
+  verifyAdminWalletAdjustDynamicKey,
+} from './utils/admin-wallet-adjust-dynamic-key';
 
 @Injectable()
 export class AdminUsersService {
@@ -1350,45 +1355,6 @@ export class AdminUsersService {
     }
   }
 
-  private verifyDynamicAdjustKey(params: {
-    memberId: string;
-    keySalt: string;
-    requestTs: string;
-    dynamicKey: string;
-  }) {
-    const { memberId, keySalt, requestTs, dynamicKey } = params;
-    const serverSecret = process.env.ADMIN_WALLET_ADJUST_KEY;
-
-    if (!serverSecret) {
-      throw new BadRequestException('Dynamic security key is not configured');
-    }
-
-    const ts = Number(requestTs);
-    if (!Number.isFinite(ts)) {
-      throw new BadRequestException('Invalid request timestamp');
-    }
-
-    const ageMs = Math.abs(Date.now() - ts);
-    if (ageMs > 60_000) {
-      throw new UnauthorizedException('Dynamic key expired. Retry with fresh salt');
-    }
-
-    const payload = `${memberId}:${keySalt}:${requestTs}`;
-    const expected = createHmac('sha256', serverSecret)
-      .update(payload)
-      .digest('hex');
-
-    const providedBuf = Buffer.from(dynamicKey);
-    const expectedBuf = Buffer.from(expected);
-
-    if (
-      providedBuf.length !== expectedBuf.length ||
-      !timingSafeEqual(providedBuf, expectedBuf)
-    ) {
-      throw new UnauthorizedException('Invalid dynamic security key');
-    }
-  }
-
   private async reverseWalletTransaction(params: {
     tx: Prisma.TransactionClient;
     userId: number;
@@ -1824,6 +1790,53 @@ export class AdminUsersService {
     };
   }
 
+  /**
+   * Mint HMAC inputs for POST /admin/wallets/adjust-balance so browsers never need ADMIN_WALLET_ADJUST_KEY/VITE_*.
+   */
+  async adminCreateWalletAdjustChallenge(adminId: number, memberIdRaw: string) {
+    const memberId = memberIdRaw?.trim();
+    if (!memberId) {
+      throw new BadRequestException('memberId is required');
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { memberId },
+      select: { id: true, memberId: true },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found');
+    }
+
+    const keySalt = randomBytes(24).toString('hex');
+    const requestTs = String(Date.now());
+    const dynamicKey = signAdminWalletAdjustDynamicKey({
+      memberId: target.memberId,
+      keySalt,
+      requestTs,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        actorType: 'admin',
+        action: 'WALLET_ADJUST_CHALLENGE_ISSUED',
+        entity: 'User',
+        entityId: target.id,
+        after: { memberId: target.memberId },
+      },
+    });
+
+    return {
+      memberId: target.memberId,
+      keySalt,
+      requestTs,
+      dynamicKey,
+      expiresInSeconds: Math.floor(
+        ADMIN_WALLET_ADJUST_KEY_MAX_AGE_MS / 1000,
+      ),
+    };
+  }
+
   async adminAdjustUserWalletBalance(params: {
     adminId: number;
     memberId: string;
@@ -1852,7 +1865,7 @@ export class AdminUsersService {
       throw new BadRequestException('Target balance cannot be negative');
     }
 
-    this.verifyDynamicAdjustKey({
+    verifyAdminWalletAdjustDynamicKey({
       memberId,
       keySalt,
       requestTs,

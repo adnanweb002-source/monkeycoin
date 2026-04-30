@@ -1,5 +1,12 @@
 import { WalletType } from '@prisma/client';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  IsEnum,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 
 export class AdminAdjustWalletBalanceDto {
   @IsString()
@@ -11,9 +18,13 @@ export class AdminAdjustWalletBalanceDto {
 
   @IsString()
   @Matches(/^\d+(\.\d{1,2})?$/, {
-    message: 'balance must be a valid non-negative amount with up to 2 decimals',
+    message: 'amount must be a valid positive amount with up to 2 decimals',
   })
-  balance: string;
+  amount: string;
+
+  @IsString()
+  @IsIn(['CREDIT', 'DEBIT'])
+  direction: 'CREDIT' | 'DEBIT';
 
   @IsString()
   @IsNotEmpty()

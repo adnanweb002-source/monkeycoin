@@ -1841,7 +1841,8 @@ export class AdminUsersService {
     adminId: number;
     memberId: string;
     walletType: WalletType;
-    balance: string;
+    amount: string;
+    direction: 'CREDIT' | 'DEBIT';
     twoFactorCode: string;
     keySalt: string;
     requestTs: string;
@@ -1852,17 +1853,21 @@ export class AdminUsersService {
       adminId,
       memberId,
       walletType,
-      balance,
+      amount,
+      direction,
       twoFactorCode,
       keySalt,
       requestTs,
       dynamicKey,
       reason,
     } = params;
-    const targetBalance = new Decimal(balance).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    const adjustmentAmount = new Decimal(amount).toDecimalPlaces(
+      2,
+      Decimal.ROUND_DOWN,
+    );
 
-    if (targetBalance.lt(0)) {
-      throw new BadRequestException('Target balance cannot be negative');
+    if (adjustmentAmount.lte(0)) {
+      throw new BadRequestException('Adjustment amount must be greater than zero');
     }
 
     verifyAdminWalletAdjustDynamicKey({
@@ -1896,24 +1901,18 @@ export class AdminUsersService {
         2,
         Decimal.ROUND_DOWN,
       );
-      if (currentBalance.equals(targetBalance)) {
-        return {
-          ok: true,
-          message: 'Wallet balance already matches requested value',
-          memberId: user.memberId,
-          walletType,
-          beforeBalance: currentBalance.toFixed(2),
-          balanceAfter: targetBalance.toFixed(2),
-        };
+      if (direction === 'DEBIT' && currentBalance.lt(adjustmentAmount)) {
+        throw new BadRequestException('Insufficient balance for debit adjustment');
       }
 
-      const delta = targetBalance.minus(currentBalance);
-      const direction = delta.gt(0) ? 'CREDIT' : 'DEBIT';
-      const amount = delta.abs();
+      const balanceAfter =
+        direction === 'CREDIT'
+          ? currentBalance.plus(adjustmentAmount)
+          : currentBalance.minus(adjustmentAmount);
 
       await tx.wallet.update({
         where: { id: wallet.id },
-        data: { balance: targetBalance.toFixed(2) },
+        data: { balance: balanceAfter.toFixed(2) },
       });
 
       const txNumber = generateTxNumber();
@@ -1923,8 +1922,8 @@ export class AdminUsersService {
           userId: user.id,
           type: TransactionType.ADJUSTMENT,
           direction,
-          amount: amount.toFixed(2),
-          balanceAfter: targetBalance.toFixed(2),
+          amount: adjustmentAmount.toFixed(2),
+          balanceAfter: balanceAfter.toFixed(2),
           txNumber,
           purpose: reason?.trim() || 'Admin wallet balance adjustment',
           meta: {
@@ -1933,7 +1932,9 @@ export class AdminUsersService {
             memberId: user.memberId,
             walletType,
             balanceBefore: currentBalance.toFixed(2),
-            balanceAfter: targetBalance.toFixed(2),
+            balanceAfter: balanceAfter.toFixed(2),
+            amount: adjustmentAmount.toFixed(2),
+            direction,
             reason: reason ?? null,
           },
         },
@@ -1956,8 +1957,8 @@ export class AdminUsersService {
             userId: user.id,
             memberId: user.memberId,
             walletType,
-            balance: targetBalance.toFixed(2),
-            delta: amount.toFixed(2),
+            balance: balanceAfter.toFixed(2),
+            amount: adjustmentAmount.toFixed(2),
             direction,
             txNumber,
           },
@@ -1969,9 +1970,9 @@ export class AdminUsersService {
         memberId: user.memberId,
         walletType,
         beforeBalance: currentBalance.toFixed(2),
-        balanceAfter: targetBalance.toFixed(2),
+        balanceAfter: balanceAfter.toFixed(2),
         adjustmentDirection: direction,
-        adjustmentAmount: amount.toFixed(2),
+        adjustmentAmount: adjustmentAmount.toFixed(2),
         txNumber,
       };
     });

@@ -138,7 +138,7 @@ export class AuthService {
     });
 
     if (existing) {
-      throw new ConflictException('Email or phone number already in use');
+      throw new BadRequestException('Email or phone number already in use');
     }
 
     // -----------------------------

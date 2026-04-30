@@ -15,6 +15,8 @@ import {
   parseQueryDateEnd,
   parseQueryDateStart,
 } from '../common/toronto-time';
+import { TargetMultiplier, TransactionType, WalletType } from '@prisma/client';
+import { generateTxNumber } from 'src/wallets/utils';
 
 @Injectable()
 export class TargetsService {
@@ -22,6 +24,19 @@ export class TargetsService {
     private prisma: PrismaService,
     private packageService: PackagesService,
   ) {}
+
+  private multiplierValue(multiplier: TargetMultiplier): Decimal {
+    const map: Record<TargetMultiplier, number> = {
+      X1: 1,
+      X2: 2,
+      X3: 3,
+      X4: 4,
+      X5: 5,
+      X7: 7,
+      X10: 10,
+    };
+    return new Decimal(map[multiplier]);
+  }
 
   // ADMIN — list all targets
   async listAllTargets(query: TargetsQueryDto) {
@@ -111,14 +126,27 @@ export class TargetsService {
     if (!target) throw new NotFoundException('Target not found');
 
     return this.prisma.$transaction(async (tx) => {
+      const packageAmount = new Decimal(dto.targetAmount).div(
+        this.multiplierValue(dto.multiplier),
+      );
+
       const updated = await tx.targetAssignment.update({
         where: { id },
         data: {
+          packageAmount: packageAmount.toFixed(2),
           multiplier: dto.multiplier,
           targetAmount: new Decimal(dto.targetAmount),
           salesType: dto.salesType,
         },
       });
+
+      await tx.packagePurchase.update({
+        where: { id: target.purchaseId },
+        data: {
+          amount: packageAmount.toFixed(2),
+        },
+      });
+
       await tx.auditLog.create({
         data: {
           actorId: adminId,
@@ -133,6 +161,7 @@ export class TargetsService {
             completed: target.completed,
           },
           after: {
+            packageAmount: updated.packageAmount.toString(),
             multiplier: updated.multiplier,
             targetAmount: updated.targetAmount.toString(),
             salesType: updated.salesType,
@@ -184,6 +213,41 @@ export class TargetsService {
       await tx.packagePurchase.delete({
         where: { id: target.purchaseId },
       });
+
+      const eWallet = await tx.wallet.findUnique({
+        where: {
+          userId_type: {
+            userId: target.userId,
+            type: WalletType.E_WALLET,
+          },
+        },
+      });
+
+      if (eWallet && new Decimal(eWallet.balance.toString()).gt(0)) {
+        await tx.wallet.update({
+          where: { id: eWallet.id },
+          data: { balance: '0' },
+        });
+
+        await tx.walletTransaction.create({
+          data: {
+            walletId: eWallet.id,
+            userId: target.userId,
+            type: TransactionType.ADJUSTMENT,
+            direction: 'DEBIT',
+            amount: new Decimal(eWallet.balance.toString()).toFixed(2),
+            balanceAfter: '0.00',
+            txNumber: generateTxNumber(),
+            purpose: `E_WALLET zeroed after target/package delete #${target.purchaseId}`,
+            meta: {
+              source: 'TARGET_DELETE',
+              targetId: target.id,
+              purchaseId: target.purchaseId,
+              adminId: adminId ?? null,
+            },
+          },
+        });
+      }
 
       await tx.auditLog.create({
         data: {

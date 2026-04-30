@@ -2,9 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import {
   Position,
   Status,
@@ -31,6 +32,11 @@ import Decimal from 'decimal.js';
 import { generateTxNumber } from 'src/wallets/utils';
 import { DateTime } from 'luxon';
 import { APP_ZONE } from 'src/common/toronto-time';
+import {
+  ADMIN_WALLET_ADJUST_KEY_MAX_AGE_MS,
+  signAdminWalletAdjustDynamicKey,
+  verifyAdminWalletAdjustDynamicKey,
+} from './utils/admin-wallet-adjust-dynamic-key';
 
 @Injectable()
 export class AdminUsersService {
@@ -1325,6 +1331,30 @@ export class AdminUsersService {
     return new Decimal(raw);
   }
 
+  private async verifyAdminTwoFactorCode(adminId: number, code: string) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { twoFactorSecret: true },
+    });
+
+    if (!admin) {
+      throw new NotFoundException('Admin user not found');
+    }
+
+    if (!admin.twoFactorSecret || !admin.twoFactorSecret.enabled) {
+      throw new BadRequestException('Admin 2FA must be enabled for this action');
+    }
+
+    const valid = this.twoFactorService.verifyCode(
+      admin.twoFactorSecret.secretEnc,
+      code,
+    );
+
+    if (!valid) {
+      throw new UnauthorizedException('Invalid admin 2FA code');
+    }
+  }
+
   private async reverseWalletTransaction(params: {
     tx: Prisma.TransactionClient;
     userId: number;
@@ -1688,6 +1718,46 @@ export class AdminUsersService {
         where: { id: purchase.id },
       });
 
+      const eWallet = await tx.wallet.findUnique({
+        where: {
+          userId_type: {
+            userId: purchase.userId,
+            type: WalletType.E_WALLET,
+          },
+        },
+      });
+
+      if (eWallet) {
+        const eWalletBalance = new Decimal(eWallet.balance.toString());
+        if (eWalletBalance.gt(0)) {
+          await tx.wallet.update({
+            where: { id: eWallet.id },
+            data: {
+              balance: '0',
+            },
+          });
+
+          await tx.walletTransaction.create({
+            data: {
+              walletId: eWallet.id,
+              userId: purchase.userId,
+              type: TransactionType.ADJUSTMENT,
+              direction: 'DEBIT',
+              amount: eWalletBalance.toFixed(2),
+              balanceAfter: '0.00',
+              txNumber: generateTxNumber(),
+              purpose: `E_WALLET zeroed after package delete #${purchase.id}`,
+              meta: {
+                source: 'ADMIN_PACKAGE_PURCHASE_DELETE',
+                purchaseId: purchase.id,
+                adminId,
+                reason: reason ?? null,
+              },
+            },
+          });
+        }
+      }
+
       await tx.auditLog.create({
         data: {
           actorId: adminId,
@@ -1718,6 +1788,194 @@ export class AdminUsersService {
       message: 'Package purchase deleted and reversals applied',
       purchaseId,
     };
+  }
+
+  /**
+   * Mint HMAC inputs for POST /admin/wallets/adjust-balance so browsers never need ADMIN_WALLET_ADJUST_KEY/VITE_*.
+   */
+  async adminCreateWalletAdjustChallenge(adminId: number, memberIdRaw: string) {
+    const memberId = memberIdRaw?.trim();
+    if (!memberId) {
+      throw new BadRequestException('memberId is required');
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { memberId },
+      select: { id: true, memberId: true },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found');
+    }
+
+    const keySalt = randomBytes(24).toString('hex');
+    const requestTs = String(Date.now());
+    const dynamicKey = signAdminWalletAdjustDynamicKey({
+      memberId: target.memberId,
+      keySalt,
+      requestTs,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        actorType: 'admin',
+        action: 'WALLET_ADJUST_CHALLENGE_ISSUED',
+        entity: 'User',
+        entityId: target.id,
+        after: { memberId: target.memberId },
+      },
+    });
+
+    return {
+      memberId: target.memberId,
+      keySalt,
+      requestTs,
+      dynamicKey,
+      expiresInSeconds: Math.floor(
+        ADMIN_WALLET_ADJUST_KEY_MAX_AGE_MS / 1000,
+      ),
+    };
+  }
+
+  async adminAdjustUserWalletBalance(params: {
+    adminId: number;
+    memberId: string;
+    walletType: WalletType;
+    amount: string;
+    direction: 'CREDIT' | 'DEBIT';
+    twoFactorCode: string;
+    keySalt: string;
+    requestTs: string;
+    dynamicKey: string;
+    reason?: string;
+  }) {
+    const {
+      adminId,
+      memberId,
+      walletType,
+      amount,
+      direction,
+      twoFactorCode,
+      keySalt,
+      requestTs,
+      dynamicKey,
+      reason,
+    } = params;
+    const adjustmentAmount = new Decimal(amount).toDecimalPlaces(
+      2,
+      Decimal.ROUND_DOWN,
+    );
+
+    if (adjustmentAmount.lte(0)) {
+      throw new BadRequestException('Adjustment amount must be greater than zero');
+    }
+
+    verifyAdminWalletAdjustDynamicKey({
+      memberId,
+      keySalt,
+      requestTs,
+      dynamicKey,
+    });
+
+    await this.verifyAdminTwoFactorCode(adminId, twoFactorCode);
+
+    const user = await this.prisma.user.findUnique({
+      where: { memberId },
+      select: { id: true, memberId: true, firstName: true, lastName: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.findUnique({
+        where: { userId_type: { userId: user.id, type: walletType } },
+      });
+      if (!wallet) {
+        throw new NotFoundException(
+          `Wallet ${walletType} not found for user ${user.memberId}`,
+        );
+      }
+
+      const currentBalance = new Decimal(wallet.balance.toString()).toDecimalPlaces(
+        2,
+        Decimal.ROUND_DOWN,
+      );
+      if (direction === 'DEBIT' && currentBalance.lt(adjustmentAmount)) {
+        throw new BadRequestException('Insufficient balance for debit adjustment');
+      }
+
+      const balanceAfter =
+        direction === 'CREDIT'
+          ? currentBalance.plus(adjustmentAmount)
+          : currentBalance.minus(adjustmentAmount);
+
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter.toFixed(2) },
+      });
+
+      const txNumber = generateTxNumber();
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: user.id,
+          type: TransactionType.ADJUSTMENT,
+          direction,
+          amount: adjustmentAmount.toFixed(2),
+          balanceAfter: balanceAfter.toFixed(2),
+          txNumber,
+          purpose: reason?.trim() || 'Admin wallet balance adjustment',
+          meta: {
+            source: 'ADMIN_WALLET_BALANCE_ADJUSTMENT',
+            adminId,
+            memberId: user.memberId,
+            walletType,
+            balanceBefore: currentBalance.toFixed(2),
+            balanceAfter: balanceAfter.toFixed(2),
+            amount: adjustmentAmount.toFixed(2),
+            direction,
+            reason: reason ?? null,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'ADMIN_WALLET_BALANCE_ADJUSTMENT',
+          entity: 'Wallet',
+          entityId: wallet.id,
+          before: {
+            userId: user.id,
+            memberId: user.memberId,
+            walletType,
+            balance: currentBalance.toFixed(2),
+          },
+          after: {
+            userId: user.id,
+            memberId: user.memberId,
+            walletType,
+            balance: balanceAfter.toFixed(2),
+            amount: adjustmentAmount.toFixed(2),
+            direction,
+            txNumber,
+          },
+        },
+      });
+
+      return {
+        ok: true,
+        memberId: user.memberId,
+        walletType,
+        beforeBalance: currentBalance.toFixed(2),
+        balanceAfter: balanceAfter.toFixed(2),
+        adjustmentDirection: direction,
+        adjustmentAmount: adjustmentAmount.toFixed(2),
+        txNumber,
+      };
+    });
   }
 
   async getAuditLogs(take = 20, skip = 0, memberId?: string) {

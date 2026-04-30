@@ -11,6 +11,7 @@ import {
   Delete,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AdminUsersService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -25,6 +26,7 @@ import { CreateRankDto } from './dto/create-rank.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateDepositBonusDto } from './dto/create-deposit-bonus.dto';
 import { UpdateDepositBonusDto } from './dto/update-deposit-bonus.dto';
+import { AdminAdjustWalletBalanceDto } from './dto/admin-adjust-wallet-balance.dto';
 import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
 import { Cacheable } from '../cache/decorators/cacheable.decorator';
 import { InvalidateExtra } from '../cache/decorators/invalidate-extra.decorator';
@@ -365,5 +367,30 @@ export class AdminController {
       req.user.id,
       reason,
     );
+  }
+
+  @UseGuards(
+    ThrottlerGuard,
+    JwtAuthGuard,
+    RolesGuard,
+  )
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Roles(Role.ADMIN)
+  @Post('wallets/adjust-balance')
+  adjustUserWalletBalance(
+    @Body() dto: AdminAdjustWalletBalanceDto,
+    @Req() req,
+  ) {
+    return this.adminService.adminAdjustUserWalletBalance({
+      adminId: req.user.id,
+      memberId: dto.memberId,
+      walletType: dto.walletType,
+      balance: dto.balance,
+      twoFactorCode: dto.twoFactorCode,
+      keySalt: dto.keySalt,
+      requestTs: dto.requestTs,
+      dynamicKey: dto.dynamicKey,
+      reason: dto.reason,
+    });
   }
 }

@@ -2,9 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import {
   Position,
   Status,
@@ -1325,6 +1326,69 @@ export class AdminUsersService {
     return new Decimal(raw);
   }
 
+  private async verifyAdminTwoFactorCode(adminId: number, code: string) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { twoFactorSecret: true },
+    });
+
+    if (!admin) {
+      throw new NotFoundException('Admin user not found');
+    }
+
+    if (!admin.twoFactorSecret || !admin.twoFactorSecret.enabled) {
+      throw new BadRequestException('Admin 2FA must be enabled for this action');
+    }
+
+    const valid = this.twoFactorService.verifyCode(
+      admin.twoFactorSecret.secretEnc,
+      code,
+    );
+
+    if (!valid) {
+      throw new UnauthorizedException('Invalid admin 2FA code');
+    }
+  }
+
+  private verifyDynamicAdjustKey(params: {
+    memberId: string;
+    keySalt: string;
+    requestTs: string;
+    dynamicKey: string;
+  }) {
+    const { memberId, keySalt, requestTs, dynamicKey } = params;
+    const serverSecret = process.env.ADMIN_WALLET_ADJUST_KEY;
+
+    if (!serverSecret) {
+      throw new BadRequestException('Dynamic security key is not configured');
+    }
+
+    const ts = Number(requestTs);
+    if (!Number.isFinite(ts)) {
+      throw new BadRequestException('Invalid request timestamp');
+    }
+
+    const ageMs = Math.abs(Date.now() - ts);
+    if (ageMs > 60_000) {
+      throw new UnauthorizedException('Dynamic key expired. Retry with fresh salt');
+    }
+
+    const payload = `${memberId}:${keySalt}:${requestTs}`;
+    const expected = createHmac('sha256', serverSecret)
+      .update(payload)
+      .digest('hex');
+
+    const providedBuf = Buffer.from(dynamicKey);
+    const expectedBuf = Buffer.from(expected);
+
+    if (
+      providedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(providedBuf, expectedBuf)
+    ) {
+      throw new UnauthorizedException('Invalid dynamic security key');
+    }
+  }
+
   private async reverseWalletTransaction(params: {
     tx: Prisma.TransactionClient;
     userId: number;
@@ -1688,6 +1752,46 @@ export class AdminUsersService {
         where: { id: purchase.id },
       });
 
+      const eWallet = await tx.wallet.findUnique({
+        where: {
+          userId_type: {
+            userId: purchase.userId,
+            type: WalletType.E_WALLET,
+          },
+        },
+      });
+
+      if (eWallet) {
+        const eWalletBalance = new Decimal(eWallet.balance.toString());
+        if (eWalletBalance.gt(0)) {
+          await tx.wallet.update({
+            where: { id: eWallet.id },
+            data: {
+              balance: '0',
+            },
+          });
+
+          await tx.walletTransaction.create({
+            data: {
+              walletId: eWallet.id,
+              userId: purchase.userId,
+              type: TransactionType.ADJUSTMENT,
+              direction: 'DEBIT',
+              amount: eWalletBalance.toFixed(2),
+              balanceAfter: '0.00',
+              txNumber: generateTxNumber(),
+              purpose: `E_WALLET zeroed after package delete #${purchase.id}`,
+              meta: {
+                source: 'ADMIN_PACKAGE_PURCHASE_DELETE',
+                purchaseId: purchase.id,
+                adminId,
+                reason: reason ?? null,
+              },
+            },
+          });
+        }
+      }
+
       await tx.auditLog.create({
         data: {
           actorId: adminId,
@@ -1718,6 +1822,146 @@ export class AdminUsersService {
       message: 'Package purchase deleted and reversals applied',
       purchaseId,
     };
+  }
+
+  async adminAdjustUserWalletBalance(params: {
+    adminId: number;
+    memberId: string;
+    walletType: WalletType;
+    balance: string;
+    twoFactorCode: string;
+    keySalt: string;
+    requestTs: string;
+    dynamicKey: string;
+    reason?: string;
+  }) {
+    const {
+      adminId,
+      memberId,
+      walletType,
+      balance,
+      twoFactorCode,
+      keySalt,
+      requestTs,
+      dynamicKey,
+      reason,
+    } = params;
+    const targetBalance = new Decimal(balance).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+
+    if (targetBalance.lt(0)) {
+      throw new BadRequestException('Target balance cannot be negative');
+    }
+
+    this.verifyDynamicAdjustKey({
+      memberId,
+      keySalt,
+      requestTs,
+      dynamicKey,
+    });
+
+    await this.verifyAdminTwoFactorCode(adminId, twoFactorCode);
+
+    const user = await this.prisma.user.findUnique({
+      where: { memberId },
+      select: { id: true, memberId: true, firstName: true, lastName: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.findUnique({
+        where: { userId_type: { userId: user.id, type: walletType } },
+      });
+      if (!wallet) {
+        throw new NotFoundException(
+          `Wallet ${walletType} not found for user ${user.memberId}`,
+        );
+      }
+
+      const currentBalance = new Decimal(wallet.balance.toString()).toDecimalPlaces(
+        2,
+        Decimal.ROUND_DOWN,
+      );
+      if (currentBalance.equals(targetBalance)) {
+        return {
+          ok: true,
+          message: 'Wallet balance already matches requested value',
+          memberId: user.memberId,
+          walletType,
+          beforeBalance: currentBalance.toFixed(2),
+          balanceAfter: targetBalance.toFixed(2),
+        };
+      }
+
+      const delta = targetBalance.minus(currentBalance);
+      const direction = delta.gt(0) ? 'CREDIT' : 'DEBIT';
+      const amount = delta.abs();
+
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: targetBalance.toFixed(2) },
+      });
+
+      const txNumber = generateTxNumber();
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId: user.id,
+          type: TransactionType.ADJUSTMENT,
+          direction,
+          amount: amount.toFixed(2),
+          balanceAfter: targetBalance.toFixed(2),
+          txNumber,
+          purpose: reason?.trim() || 'Admin wallet balance adjustment',
+          meta: {
+            source: 'ADMIN_WALLET_BALANCE_ADJUSTMENT',
+            adminId,
+            memberId: user.memberId,
+            walletType,
+            balanceBefore: currentBalance.toFixed(2),
+            balanceAfter: targetBalance.toFixed(2),
+            reason: reason ?? null,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: adminId,
+          actorType: 'admin',
+          action: 'ADMIN_WALLET_BALANCE_ADJUSTMENT',
+          entity: 'Wallet',
+          entityId: wallet.id,
+          before: {
+            userId: user.id,
+            memberId: user.memberId,
+            walletType,
+            balance: currentBalance.toFixed(2),
+          },
+          after: {
+            userId: user.id,
+            memberId: user.memberId,
+            walletType,
+            balance: targetBalance.toFixed(2),
+            delta: amount.toFixed(2),
+            direction,
+            txNumber,
+          },
+        },
+      });
+
+      return {
+        ok: true,
+        memberId: user.memberId,
+        walletType,
+        beforeBalance: currentBalance.toFixed(2),
+        balanceAfter: targetBalance.toFixed(2),
+        adjustmentDirection: direction,
+        adjustmentAmount: amount.toFixed(2),
+        txNumber,
+      };
+    });
   }
 
   async getAuditLogs(take = 20, skip = 0, memberId?: string) {

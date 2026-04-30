@@ -27,6 +27,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateDepositBonusDto } from './dto/create-deposit-bonus.dto';
 import { UpdateDepositBonusDto } from './dto/update-deposit-bonus.dto';
 import { AdminAdjustWalletBalanceDto } from './dto/admin-adjust-wallet-balance.dto';
+import { AdminWalletAdjustChallengeDto } from './dto/admin-wallet-adjust-challenge.dto';
 import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
 import { Cacheable } from '../cache/decorators/cacheable.decorator';
 import { InvalidateExtra } from '../cache/decorators/invalidate-extra.decorator';
@@ -366,6 +367,20 @@ export class AdminController {
       Number(purchaseId),
       req.user.id,
       reason,
+    );
+  }
+
+  @UseGuards(ThrottlerGuard, JwtAuthGuard, RolesGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Roles(Role.ADMIN)
+  @Post('wallets/adjust-balance/challenge')
+  createWalletAdjustChallenge(
+    @Body() dto: AdminWalletAdjustChallengeDto,
+    @Req() req,
+  ) {
+    return this.adminService.adminCreateWalletAdjustChallenge(
+      req.user.id,
+      dto.memberId,
     );
   }
 

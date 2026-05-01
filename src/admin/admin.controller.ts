@@ -30,13 +30,18 @@ import { AdminAdjustWalletBalanceDto } from './dto/admin-adjust-wallet-balance.d
 import { AdminWalletAdjustChallengeDto } from './dto/admin-wallet-adjust-challenge.dto';
 import { SendUserNotificationDto } from './dto/send-user-notification.dto';
 import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
+import { InvalidateExtra } from '../cache/decorators/invalidate-extra.decorator';
 
 @Controller('admin/users')
+@CacheNamespace('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminUsersController {
   constructor(private readonly svc: AdminUsersService) {}
 
+  @Cacheable({ ttlSeconds: 20, namespace: 'admin', scope: 'user' })
   @Get('list')
   getAllUsers(
     @Query('take') take: string,
@@ -111,6 +116,7 @@ export class AdminUsersController {
 }
 
 @Controller('admin/')
+@CacheNamespace('admin')
 export class AdminController {
   constructor(
     private readonly adminService: AdminUsersService,
@@ -127,6 +133,7 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Cacheable({ ttlSeconds: 120, namespace: 'admin', scope: 'global' })
   @Get('get-wallet-limits')
   getWalletLimits() {
     return this.walletService.getWalletLimits();
@@ -134,6 +141,7 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @InvalidateExtra({ namespaces: ['wallet'] })
   @Post('wallet-limits/upsert')
   async upsertWalletLimit(@Body() body: any) {
     return this.walletService.upsertWalletLimit(body);
@@ -205,6 +213,7 @@ export class AdminController {
     return this.adminService.upsertSetting(key, value, req.user.id);
   }
 
+  @Cacheable({ ttlSeconds: 60, namespace: 'admin', scope: 'user' })
   @Get('settings/get')
   @UseGuards(JwtAuthGuard)
   getSettings(@Query('key') key?: SETTING_TYPE) {
@@ -241,6 +250,7 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @InvalidateExtra({ namespaces: ['ranks'] })
   @Delete('/ranks/:id')
   deleteRank(@Param('id') id: number, @Req() req) {
     return this.adminService.deleteRank(Number(id), req.user.id);
@@ -248,6 +258,7 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Cacheable({ ttlSeconds: 30, namespace: 'admin', scope: 'user' })
   @Get('/stats')
   getStats() {
     return this.adminService.getStats();
@@ -292,6 +303,7 @@ export class AdminController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Cacheable({ ttlSeconds: 60, namespace: 'admin', scope: 'global' })
   @Get('deposit-bonus')
   listDepositBonuses() {
     return this.adminService.listDepositBonuses();

@@ -264,16 +264,6 @@ export class PackagesService {
         },
       });
 
-      // trigger target engine
-      if (d_wallet_amount.gt(0)) {
-      await this.processTargetVolume(
-        tx,
-        parent.id,
-          d_wallet_amount,
-          TargetSalesType.INDIRECT,
-        );
-      }
-
       await this.notificationsService.createNotification(
         parent.id,
         'Binary Volume Update',
@@ -288,6 +278,45 @@ export class PackagesService {
         where: { id: parent.id },
         select: { sponsorId: true, position: true, parentId: true },
       });
+    }
+  }
+
+  async processIndirectTargetVolumeForReferralUpline(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    amount: Decimal,
+  ) {
+    if (amount.lte(0)) return;
+
+    // DIRECT target is already handled for immediate sponsor.
+    // INDIRECT should flow only through referral upline (sponsor chain), starting above direct sponsor.
+    let current = await tx.user.findUnique({
+      where: { id: userId },
+      select: { sponsorId: true },
+    });
+
+    let nextSponsorId = current?.sponsorId ?? null;
+    if (!nextSponsorId) return;
+
+    const directSponsor = await tx.user.findUnique({
+      where: { id: nextSponsorId },
+      select: { sponsorId: true },
+    });
+    nextSponsorId = directSponsor?.sponsorId ?? null;
+
+    while (nextSponsorId) {
+      await this.processTargetVolume(
+        tx,
+        nextSponsorId,
+        amount,
+        TargetSalesType.INDIRECT,
+      );
+
+      const next = await tx.user.findUnique({
+        where: { id: nextSponsorId },
+        select: { sponsorId: true },
+      });
+      nextSponsorId = next?.sponsorId ?? null;
     }
   }
 
@@ -549,6 +578,14 @@ export class PackagesService {
             TargetSalesType.DIRECT,
           );
         }
+      }
+
+      if (!dto.isTarget && d_wallet_amount.gt(0)) {
+        await this.processIndirectTargetVolumeForReferralUpline(
+          tx,
+          user.id,
+          d_wallet_amount,
+        );
       }
 
       if (dto.isTarget) {

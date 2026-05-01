@@ -647,6 +647,23 @@ Top 3 performers receive exclusive Global Profit Share bonuses and VIP pool acce
 undefined,
 undefined,
 "Vaultire Infinite Achievements | Leaders create trends<br>www.vaultireinfinite.com"
+),
+
+normalNotification: (
+name:string,
+title:string,
+message:string
+) =>
+baseEmailTemplate(
+title,
+
+`Hi ${name},<br><br>
+
+${message}`,
+
+undefined,
+undefined,
+"Vaultire Infinite Notifications | Stay informed and secure<br>www.vaultireinfinite.com"
 )
 
 };

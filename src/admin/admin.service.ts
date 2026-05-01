@@ -37,6 +37,10 @@ import {
   signAdminWalletAdjustDynamicKey,
   verifyAdminWalletAdjustDynamicKey,
 } from './utils/admin-wallet-adjust-dynamic-key';
+import { NotificationsService } from 'src/notifications/notifcations.service';
+import { EmailTemplates } from 'src/mail/templates/email.templates';
+import { SendUserNotificationDto } from './dto/send-user-notification.dto';
+import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
 
 @Injectable()
 export class AdminUsersService {
@@ -45,6 +49,7 @@ export class AdminUsersService {
     private walletService: WalletService,
     private authService: AuthService,
     private twoFactorService: TwoFactorService,
+    private notificationsService: NotificationsService,
   ) { }
 
   private static readonly DEFAULT_GROWTH_POINTS = 7;
@@ -1976,6 +1981,143 @@ export class AdminUsersService {
         txNumber,
       };
     });
+  }
+
+  async adminSendOnDemandNotification(adminId: number, dto: SendUserNotificationDto) {
+    const memberId = dto.memberId.trim();
+    const user = await this.prisma.user.findUnique({
+      where: { memberId },
+      select: {
+        id: true,
+        memberId: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const emailSubject = dto.emailSubject?.trim() || dto.title;
+    const emailHtml = EmailTemplates.normalNotification(
+      `${user.firstName} ${user.lastName}`.trim(),
+      dto.title,
+      dto.message,
+    );
+
+    await this.notificationsService.createNotification(
+      user.id,
+      dto.title,
+      dto.message,
+      dto.sendEmail,
+      emailHtml,
+      emailSubject,
+      dto.redirectUrl,
+      true,
+    );
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        actorType: 'admin',
+        action: 'ADMIN_NOTIFICATION_SENT',
+        entity: 'User',
+        entityId: user.id,
+        after: {
+          memberId: user.memberId,
+          title: dto.title,
+          sendEmail: dto.sendEmail,
+          emailSubject: dto.sendEmail ? emailSubject : null,
+          redirectUrl: dto.redirectUrl ?? null,
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      memberId: user.memberId,
+      notificationSent: true,
+      emailSent: dto.sendEmail,
+    };
+  }
+
+  async adminBroadcastNotification(adminId: number, dto: BroadcastNotificationDto) {
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        memberId: {
+          not: 'COMPANY',
+        },
+      },
+      select: {
+        id: true,
+        memberId: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!recipients.length) {
+      return {
+        ok: true,
+        totalRecipients: 0,
+        delivered: 0,
+        emailRequested: dto.sendEmail,
+      };
+    }
+
+    const emailSubject = dto.emailSubject?.trim() || dto.title;
+    const batchSize = 100;
+    let delivered = 0;
+
+    for (let i = 0; i < recipients.length; i += batchSize) {
+      const batch = recipients.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (user) => {
+          const emailHtml = EmailTemplates.normalNotification(
+            `${user.firstName} ${user.lastName}`.trim(),
+            dto.title,
+            dto.message,
+          );
+
+          await this.notificationsService.createNotification(
+            user.id,
+            dto.title,
+            dto.message,
+            dto.sendEmail,
+            emailHtml,
+            emailSubject,
+            dto.redirectUrl,
+            true,
+          );
+          delivered += 1;
+        }),
+      );
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        actorType: 'admin',
+        action: 'ADMIN_NOTIFICATION_BROADCAST',
+        entity: 'User',
+        after: {
+          title: dto.title,
+          sendEmail: dto.sendEmail,
+          emailSubject: dto.sendEmail ? emailSubject : null,
+          redirectUrl: dto.redirectUrl ?? null,
+          totalRecipients: recipients.length,
+          delivered,
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      totalRecipients: recipients.length,
+      delivered,
+      emailRequested: dto.sendEmail,
+    };
   }
 
   async getAuditLogs(take = 20, skip = 0, memberId?: string) {

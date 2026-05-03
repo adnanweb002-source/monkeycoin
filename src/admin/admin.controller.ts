@@ -28,6 +28,8 @@ import { CreateDepositBonusDto } from './dto/create-deposit-bonus.dto';
 import { UpdateDepositBonusDto } from './dto/update-deposit-bonus.dto';
 import { AdminAdjustWalletBalanceDto } from './dto/admin-adjust-wallet-balance.dto';
 import { AdminWalletAdjustChallengeDto } from './dto/admin-wallet-adjust-challenge.dto';
+import { SendUserNotificationDto } from './dto/send-user-notification.dto';
+import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -396,5 +398,21 @@ export class AdminController {
       dynamicKey: dto.dynamicKey,
       reason: dto.reason,
     });
+  }
+
+  @UseGuards(ThrottlerGuard, JwtAuthGuard, RolesGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Roles(Role.ADMIN)
+  @Post('notifications/send')
+  sendNotificationToUser(@Body() dto: SendUserNotificationDto, @Req() req) {
+    return this.adminService.adminSendOnDemandNotification(req.user.id, dto);
+  }
+
+  @UseGuards(ThrottlerGuard, JwtAuthGuard, RolesGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Roles(Role.ADMIN)
+  @Post('notifications/broadcast')
+  broadcastNotification(@Body() dto: BroadcastNotificationDto, @Req() req) {
+    return this.adminService.adminBroadcastNotification(req.user.id, dto);
   }
 }

@@ -10,4 +10,7 @@ export class UpdateTargetDto {
 
   @IsDecimal()
   targetAmount: string;
+
+  @IsDecimal()
+  packageAmount: string;
 }

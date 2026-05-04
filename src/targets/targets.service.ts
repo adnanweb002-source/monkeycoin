@@ -23,7 +23,7 @@ export class TargetsService {
   constructor(
     private prisma: PrismaService,
     private packageService: PackagesService,
-  ) {}
+  ) { }
 
   private multiplierValue(multiplier: TargetMultiplier): Decimal {
     const map: Record<TargetMultiplier, number> = {
@@ -121,14 +121,17 @@ export class TargetsService {
   async updateTarget(id: number, dto: UpdateTargetDto, adminId?: number) {
     const target = await this.prisma.targetAssignment.findUnique({
       where: { id },
+      include: {
+        purchase: true,
+      },
     });
+
+    const oldPackageAmount = target?.purchase.amount
 
     if (!target) throw new NotFoundException('Target not found');
 
     return this.prisma.$transaction(async (tx) => {
-      const packageAmount = new Decimal(dto.targetAmount).div(
-        this.multiplierValue(dto.multiplier),
-      );
+      const packageAmount = dto.packageAmount ? new Decimal(dto.packageAmount) : new Decimal(target.packageAmount);
 
       const updated = await tx.targetAssignment.update({
         where: { id },
@@ -140,12 +143,31 @@ export class TargetsService {
         },
       });
 
-      await tx.packagePurchase.update({
-        where: { id: target.purchaseId },
-        data: {
-          amount: packageAmount.toFixed(2),
-        },
-      });
+      if (oldPackageAmount !== packageAmount) {
+        const pkg = await this.prisma.package.findFirst({
+          where: {
+            investmentMax: {
+              gte: dto.packageAmount,
+            },
+            investmentMin: {
+              lte: dto.packageAmount,
+            },
+          },
+        });
+
+        if (!pkg) {
+          throw new BadRequestException('No matching package found');
+        }
+
+        await tx.packagePurchase.update({
+          where: { id: target.purchaseId },
+          data: {
+            packageId: pkg.id,
+            amount: dto.packageAmount,
+          },
+        });
+
+      }
 
       await tx.auditLog.create({
         data: {
@@ -371,7 +393,7 @@ export class TargetsService {
         completed: false,
       },
     });
-    
+
     if (existingTarget) {
       throw new BadRequestException('User already has an active target');
     }

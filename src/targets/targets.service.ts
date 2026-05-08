@@ -204,26 +204,19 @@ export class TargetsService {
     if (!target) throw new NotFoundException('Target not found');
 
     await this.prisma.$transaction(async (tx) => {
-      // Count how many targets this user has
-      const count = await tx.targetAssignment.count({
-        where: {
-          userId: target.userId,
-        },
-      });
-
-      // If this is the ONLY target
-      if (count === 1) {
-        await tx.user.update({
-          where: { id: target.userId },
-          data: {
-            lockWithdrawalsTillTarget: false,
-          },
-        });
-      }
-
-      // Delete the target
       await tx.targetAssignment.delete({
         where: { id },
+      });
+
+      const incompleteTargetsRemaining = await tx.targetAssignment.count({
+        where: { userId: target.userId, completed: false },
+      });
+
+      await tx.user.update({
+        where: { id: target.userId },
+        data: {
+          lockWithdrawalsTillTarget: incompleteTargetsRemaining > 0,
+        },
       });
 
       // Remove generated ROI logs linked to this purchase before deleting purchase

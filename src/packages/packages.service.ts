@@ -618,11 +618,15 @@ export class PackagesService {
           },
         });
       }
+      const incompleteTargetsForUser = await tx.targetAssignment.count({
+        where: { userId: user.id, completed: false },
+      });
+
       await tx.user.update({
         where: { id: user.id },
         data: {
           activePackageCount: { increment: 1 },
-          lockWithdrawalsTillTarget: dto.isTarget || false,
+          lockWithdrawalsTillTarget: incompleteTargetsForUser > 0,
         },
       });
 

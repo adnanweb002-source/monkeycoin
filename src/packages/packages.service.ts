@@ -232,7 +232,21 @@ export class PackagesService {
     userId: number,
     bv: Decimal,
     d_wallet_amount: Decimal,
-  ) {
+  ): Promise<
+    Array<{
+      userId: number;
+      title: string;
+      description: string;
+      redirectUrl?: string;
+    }>
+  > {
+    const notificationJobs: Array<{
+      userId: number;
+      title: string;
+      description: string;
+      redirectUrl?: string;
+    }> = [];
+
     // get the buyer
     let current = await tx.user.findUnique({
       where: { id: userId },
@@ -264,21 +278,20 @@ export class PackagesService {
         },
       });
 
-      await this.notificationsService.createNotification(
-        parent.id,
-        'Binary Volume Update',
-        `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume increased by ${bv.toFixed()}.`,
-        false,
-        undefined,
-        undefined,
-        '/reports/track-referral',
-      );
+      notificationJobs.push({
+        userId: parent.id,
+        title: 'Binary Volume Update',
+        description: `Your ${field === 'leftBv' ? 'left' : 'right'} binary volume increased by ${bv.toFixed()}.`,
+        redirectUrl: '/reports/track-referral',
+      });
 
       current = await tx.user.findUnique({
         where: { id: parent.id },
         select: { sponsorId: true, position: true, parentId: true },
       });
     }
+
+    return notificationJobs;
   }
 
   async processIndirectTargetVolumeForReferralUpline(
@@ -461,6 +474,18 @@ export class PackagesService {
       },
     });
 
+    const deferredMailOutbox: {
+      userId: number;
+      subject: string;
+      html: string;
+    }[] = [];
+    let binaryVolumeNotificationJobs: Array<{
+      userId: number;
+      title: string;
+      description: string;
+      redirectUrl?: string;
+    }> = [];
+
     await this.prisma.$transaction(async (tx) => {
       // 🔹 debit multiple wallets based on split
       let purpose = '';
@@ -497,7 +522,7 @@ export class PackagesService {
 
       // Skip holidays
       while (true) {
-        const holiday = await this.prisma.holiday.findFirst({
+        const holiday = await tx.holiday.findFirst({
           where: {
             date: startDate.toJSDate(),
           },
@@ -522,7 +547,7 @@ export class PackagesService {
 
       // Skip holidays
       while (true) {
-        const holiday = await this.prisma.holiday.findFirst({
+        const holiday = await tx.holiday.findFirst({
           where: {
             date: endDate.toJSDate(),
           },
@@ -566,7 +591,12 @@ export class PackagesService {
       }
 
       if (!dto.isTarget) {
-        await this.addBinaryVolume(tx, user.id, bv, d_wallet_amount);
+        binaryVolumeNotificationJobs = await this.addBinaryVolume(
+          tx,
+          user.id,
+          bv,
+          d_wallet_amount,
+        );
       }
 
       if (user.sponsorId) {
@@ -632,7 +662,7 @@ export class PackagesService {
 
       // ➜ REFERRAL BONUS and PACKAGE COUNT INCREMENT
       if (user?.sponsorId && !dto.isTarget) {
-        const sponsor = await this.prisma.user.findUnique({
+        const sponsor = await tx.user.findUnique({
           where: { id: user.sponsorId },
         });
 
@@ -641,7 +671,7 @@ export class PackagesService {
         }
 
         if (sponsor.activePackageCount > 0) {
-          const bonus = await this.prisma.adminSetting.findUnique({
+          const bonus = await tx.adminSetting.findUnique({
             where: { key: SETTING_TYPE.REFERRAL_INCOME_RATE },
           });
 
@@ -677,6 +707,8 @@ export class PackagesService {
               html,
               'New Referral Earnings Credited!',
               '/income/referral',
+              true,
+              deferredMailOutbox,
             );
           }
         }
@@ -705,6 +737,8 @@ export class PackagesService {
           html,
           `You purchased ${pkg.name} for ${user.firstName} ${user.lastName}`,
           '/reports/gain-report?type=PACKAGE_PURCHASE',
+          true,
+          deferredMailOutbox,
         );
 
         // send notification to recipient
@@ -723,6 +757,8 @@ export class PackagesService {
           html2,
           `New Package Added to Your Account`,
           '/reports/gain-report?type=PACKAGE_PURCHASE',
+          true,
+          deferredMailOutbox,
         );
       } else {
         const html = EmailTemplates.packageSelf(
@@ -744,6 +780,8 @@ export class PackagesService {
           html,
           `${pkg.name} purchased successfully`,
           '/reports/gain-report?type=PACKAGE_PURCHASE',
+          true,
+          deferredMailOutbox,
         );
       }
 
@@ -767,6 +805,21 @@ export class PackagesService {
         },
       });
     });
+
+    await this.notificationsService.flushDeferredNotificationMail(
+      deferredMailOutbox,
+    );
+    for (const job of binaryVolumeNotificationJobs) {
+      await this.notificationsService.createNotification(
+        job.userId,
+        job.title,
+        job.description,
+        false,
+        undefined,
+        undefined,
+        job.redirectUrl,
+      );
+    }
 
     return {
       message: 'Package purchased successfully',

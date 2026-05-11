@@ -59,6 +59,21 @@ export class NotificationsService {
     return notification;
   }
 
+  /** Send mail queued via createNotificationTransaction(..., deferredMailOutbox). Call after interactive $transaction commits. */
+  async flushDeferredNotificationMail(
+    deferredMailOutbox: { userId: number; subject: string; html: string }[],
+  ) {
+    if (!deferredMailOutbox.length) return;
+    for (const job of deferredMailOutbox) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: job.userId },
+      });
+      if (user?.email) {
+        await this.mailService.sendMail(user.email, job.subject, job.html);
+      }
+    }
+  }
+
   async createNotificationTransaction(
     tx: Prisma.TransactionClient,
     userId: number,
@@ -69,6 +84,7 @@ export class NotificationsService {
     emailSubject?: string,
     redirectUrl?: string,
     createPushNotification = true,
+    deferredMailOutbox?: { userId: number; subject: string; html: string }[],
   ) {
     /* Save notification */
     let notification: any;
@@ -89,15 +105,23 @@ export class NotificationsService {
       this.gateway.emitToUser(userId, notification);
     }
 
-    /* Email */
+    /* Email — defer when deferredMailOutbox is provided (avoids SMTP / extra queries inside interactive transactions). */
 
     if (sendMail && emailHtml && emailSubject) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
+      if (deferredMailOutbox) {
+        deferredMailOutbox.push({
+          userId,
+          subject: emailSubject,
+          html: emailHtml,
+        });
+      } else {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+        });
 
-      if (user?.email) {
-        await this.mailService.sendMail(user.email, emailSubject, emailHtml);
+        if (user?.email) {
+          await this.mailService.sendMail(user.email, emailSubject, emailHtml);
+        }
       }
     }
 

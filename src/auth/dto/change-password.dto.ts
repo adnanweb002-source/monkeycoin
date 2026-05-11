@@ -1,4 +1,4 @@
-import { IsNotEmpty, Length } from 'class-validator';
+import { IsNotEmpty, Length, IsOptional } from 'class-validator';
 
 export class ChangePasswordDto {
   @IsNotEmpty()
@@ -7,6 +7,6 @@ export class ChangePasswordDto {
   @Length(8, 128)
   newPassword: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   twoFactorCode: string;
 }

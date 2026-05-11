@@ -1,9 +1,9 @@
-import { IsEmail, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsOptional } from 'class-validator';
 
 export class EmailChangeDto {
   @IsEmail()
   newEmail: string;
 
-  @IsNotEmpty()
-  twoFactorCode: string;
+  @IsOptional() 
+  twoFactorCode?: string;
 }

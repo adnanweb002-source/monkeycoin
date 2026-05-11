@@ -847,7 +847,13 @@ export class WalletService {
       throw new BadRequestException(`Cannot debit wallet: ${canDebit.reason}`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const deferredMailOutbox: {
+      userId: number;
+      subject: string;
+      html: string;
+    }[] = [];
+
+    const result = await this.prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.findUnique({
         where: { userId_type: { userId, type: walletType } as any },
       });
@@ -907,6 +913,8 @@ export class WalletService {
         html,
         'Withdrawal Request Initiated',
         '/wallet/withdrawal-requests',
+        true,
+        deferredMailOutbox,
       );
 
       await tx.auditLog.create({
@@ -938,6 +946,11 @@ export class WalletService {
         walletType: params.walletType,
       };
     });
+
+    await this.notificationsService.flushDeferredNotificationMail(
+      deferredMailOutbox,
+    );
+    return result;
   }
 
   // Handle deposit confirmation (e.g. webhook) -> credit D_WALLET
@@ -1078,19 +1091,20 @@ export class WalletService {
 
   // Crypto Deposit: create deposit request via NowPayments
   async createCryptoDeposit(userId: number, dto: CreateCryptoDepositDto) {
-    return this.prisma.$transaction(async (tx) => {
-      const dep = await tx.externalDeposit.create({
-        data: {
-          userId,
-          status: 'pending',
-          fiatAmount: dto.amount,
-          crypto: dto.crypto,
-          paymentId:
-            new Date().getTime().toString() +
-            Math.random().toString(36).substring(2), // temp
-        },
-      });
+    const tempPaymentId =
+      `${Date.now()}${Math.random().toString(36).substring(2)}`;
 
+    const dep = await this.prisma.externalDeposit.create({
+      data: {
+        userId,
+        status: 'pending',
+        fiatAmount: dto.amount,
+        crypto: dto.crypto,
+        paymentId: tempPaymentId,
+      },
+    });
+
+    try {
       const invoice = await this.nowPayments.createPayment({
         userId,
         amountUsd: dto.amount,
@@ -1098,15 +1112,34 @@ export class WalletService {
         depositId: dep.id,
       });
 
-      await tx.externalDeposit.update({
-        where: { id: dep.id },
-        data: {
-          paymentId: invoice.payment_id.toString(),
-          payAmount: invoice.pay_amount?.toString(),
-          address: invoice.pay_address,
-          meta: invoice,
-          status: invoice.payment_status,
-        },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.externalDeposit.update({
+          where: { id: dep.id },
+          data: {
+            paymentId: invoice.payment_id.toString(),
+            payAmount: invoice.pay_amount?.toString(),
+            address: invoice.pay_address,
+            meta: invoice,
+            status: invoice.payment_status,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            actorId: userId,
+            actorType: 'user',
+            action: 'CRYPTO_DEPOSIT_INITIATED',
+            entity: 'ExternalDeposit',
+            entityId: dep.id,
+            after: {
+              paymentId: invoice.payment_id?.toString(),
+              amountFiat: dto.amount,
+              amountCrypto: invoice.pay_amount,
+              currency: dto.crypto,
+              status: invoice.payment_status,
+            },
+          },
+        });
       });
 
       const uri = `${invoice.pay_currency}:${invoice.pay_address}?amount=${invoice.pay_amount}`;
@@ -1116,23 +1149,6 @@ export class WalletService {
         'Deposit Initiated',
         `Your deposit of ${invoice.pay_amount} ${invoice.pay_currency} has been initiated. Please complete the payment to the address provided.`,
       );
-
-      await tx.auditLog.create({
-        data: {
-          actorId: userId,
-          actorType: 'user',
-          action: 'CRYPTO_DEPOSIT_INITIATED',
-          entity: 'ExternalDeposit',
-          entityId: dep.id,
-          after: {
-            paymentId: invoice.payment_id?.toString(),
-            amountFiat: dto.amount,
-            amountCrypto: invoice.pay_amount,
-            currency: dto.crypto,
-            status: invoice.payment_status,
-          },
-        },
-      });
 
       return {
         depositId: dep.id,
@@ -1144,7 +1160,21 @@ export class WalletService {
         uri, // frontend can turn this into QR
         expiresAt: invoice.expiration_estimate_date,
       };
-    });
+    } catch (err: unknown) {
+      await this.prisma.externalDeposit
+        .update({
+          where: { id: dep.id },
+          data: {
+            status: 'failed',
+            meta: {
+              error:
+                err instanceof Error ? err.message : String(err),
+            },
+          },
+        })
+        .catch(() => {});
+      throw err;
+    }
   }
 
   async getDepositStatus(depositId: number, userId: number) {

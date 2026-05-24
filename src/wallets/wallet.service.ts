@@ -18,7 +18,10 @@ import { NotificationsService } from 'src/notifications/notifcations.service';
 import { EmailTemplates } from 'src/mail/templates/email.templates';
 import { SETTING_TYPE } from '@prisma/client';
 import { DateTime } from 'luxon';
-import { hoursAgo, nowInstant } from '../common/toronto-time';
+import { APP_ZONE, hoursAgo, nowInstant } from '../common/toronto-time';
+
+/** Toronto calendar day (YYYY-MM-DD) when Memorial Day blocks E-Wallet withdrawals. */
+const E_WALLET_MEMORIAL_DAY_BLOCK = '2026-05-25';
 
 @Injectable()
 export class WalletService {
@@ -814,12 +817,33 @@ export class WalletService {
   }, ip: string) {
     const { userId, walletType, amount, method, address } = params;
 
-    const zone = 'America/Toronto';
+    const torontoNow = DateTime.now().setZone(APP_ZONE);
 
-    let time = DateTime.now().setZone(zone);
+    if (walletType === 'E_WALLET') {
+      // Luxon weekday: 1 = Monday, 7 = Sunday
+      if (torontoNow.weekday !== 1) {
+        throw new ForbiddenException(
+          'Withdrawals from Earning Wallet are only allowed on Mondays (America/Toronto)',
+        );
+      }
 
-    if (time.weekday !== 1 && walletType === 'E_WALLET') {
-      throw new ForbiddenException('Withdrawals from Earning Wallet are only allowed on Mondays');
+      const dateKey = torontoNow.toISODate();
+      if (dateKey === E_WALLET_MEMORIAL_DAY_BLOCK) {
+        throw new ForbiddenException(
+          'Withdrawals from Earning Wallet are not available on Memorial Day.',
+        );
+      }
+
+      const start = torontoNow.startOf('day').toJSDate();
+      const end = torontoNow.endOf('day').toJSDate();
+      const holiday = await this.prisma.holiday.findFirst({
+        where: { date: { gte: start, lte: end } },
+      });
+      if (holiday) {
+        throw new ForbiddenException(
+          `Withdrawals from Earning Wallet are not available today (${holiday.title}).`,
+        );
+      }
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -841,6 +865,11 @@ export class WalletService {
 
     const amt = new Decimal(amount);
     if (amt.lte(0)) throw new BadRequestException('Amount must be positive');
+
+    const withdrawalFeeRate =
+      walletType === 'P_WALLET' ? new Decimal('0.05') : new Decimal(0);
+    const withdrawalFee = amt.mul(withdrawalFeeRate);
+    const netPayout = amt.minus(withdrawalFee);
 
     const canDebit = await this.canDebitWallet({ userId, walletType, amount });
     if (!canDebit.ok) {
@@ -893,13 +922,23 @@ export class WalletService {
           meta: {
             withdrawalRequestId: wr.id,
             ip,
+            grossAmount: amt.toFixed(),
+            withdrawalFee: withdrawalFee.toFixed(),
+            netPayout: netPayout.toFixed(),
+            withdrawalFeeRate: withdrawalFeeRate.toFixed(),
           },
         },
       });
 
+      const payoutDisplay = netPayout.toFixed();
+      const feeNote =
+        withdrawalFee.gt(0)
+          ? ` (includes $${withdrawalFee.toFixed()} withdrawal fee; you will receive $${payoutDisplay})`
+          : '';
+
       const html = EmailTemplates.withdrawalRequest(
         user.firstName + ' ' + user.lastName,
-        amt.toFixed(),
+        payoutDisplay,
         walletType,
         address,
       );
@@ -908,7 +947,7 @@ export class WalletService {
         tx,
         userId,
         'Withdrawal Requested',
-        `Your withdrawal request of $${amt.toFixed()}   via ${method} has been created and is pending approval. We will notify you once it is processed.`,
+        `Your withdrawal request of $${payoutDisplay} via ${method} has been created and is pending approval.${feeNote} We will notify you once it is processed.`,
         true,
         html,
         'Withdrawal Request Initiated',
@@ -930,6 +969,8 @@ export class WalletService {
           },
           after: {
             amount: amt.toFixed(),
+            withdrawalFee: withdrawalFee.toFixed(),
+            netPayout: netPayout.toFixed(),
             method,
             status: wr.status,
             balanceAfter: newBalance.toFixed(),
@@ -944,6 +985,9 @@ export class WalletService {
         balanceAfter: newBalance.toFixed(),
         balanceBefore: bal.toFixed(),
         walletType: params.walletType,
+        grossAmount: amt.toFixed(),
+        withdrawalFee: withdrawalFee.toFixed(),
+        netPayout: netPayout.toFixed(),
       };
     });
 

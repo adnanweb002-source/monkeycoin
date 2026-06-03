@@ -17,8 +17,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/enums/role.enum';
 import { ApiKeyGuard } from 'src/auth/guards/api-key.guard';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
 
 @Controller('utility')
+@CacheNamespace('utility')
 export class UtilityController {
   constructor(private readonly utility: UtilityService) {}
 
@@ -41,12 +44,14 @@ export class UtilityController {
     return this.utility.replyToQueryUser(req.user.id, Number(id), dto.message);
   }
 
+  @Cacheable({ ttlSeconds: 20, namespace: 'utility', scope: 'user' })
   @Get('queries')
   @UseGuards(JwtAuthGuard)
   getUserQueries(@Req() req, @Query('skip') skip, @Query('take') take) {
     return this.utility.getUserQueries(req.user.id, Number(skip), Number(take));
   }
 
+  @Cacheable({ ttlSeconds: 20, namespace: 'utility', scope: 'user' })
   @Get('admin/queries')
   @Roles('ADMIN')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -56,6 +61,7 @@ export class UtilityController {
 
   // 👤 USER — VIEW HOLIDAYS
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 300, namespace: 'utility', scope: 'global' })
   @Get('holidays')
   async getHolidays() {
     return this.utility.listHolidays();

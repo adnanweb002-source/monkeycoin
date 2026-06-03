@@ -10,13 +10,17 @@ import {
 } from '@nestjs/common';
 import { NotificationsService } from './notifcations.service';
 import { JwtAuthGuard } from '../auth/jwt.auth.guard';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
 
 @Controller('notifications')
+@CacheNamespace('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {
   constructor(private notificationsService: NotificationsService) {}
 
   // GET /notifications?take=10&skip=0
+  @Cacheable({ ttlSeconds: 15, namespace: 'notifications', scope: 'user' })
   @Get()
   async getMyNotifications(
     @Req() req,

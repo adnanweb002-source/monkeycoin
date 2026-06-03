@@ -32,8 +32,12 @@ import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { Role } from './enums/role.enum';
 import { ProfileChangeDto } from './dto/profile-update-dto';
+import { CacheNamespace } from '../cache/decorators/cache-namespace.decorator';
+import { Cacheable } from '../cache/decorators/cacheable.decorator';
+import { SkipCacheInvalidation } from '../cache/decorators/skip-cache-invalidation.decorator';
 
 @Controller('auth')
+@CacheNamespace('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
@@ -41,6 +45,7 @@ export class AuthController {
   ) { }
 
   @Post('register')
+  @SkipCacheInvalidation()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 120, ttl: 3600000 } })
   async register(
@@ -102,6 +107,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @SkipCacheInvalidation()
   @HttpCode(200)
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 300000 } })
@@ -142,6 +148,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @SkipCacheInvalidation()
   @HttpCode(200)
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 60, ttl: 60000 } })
@@ -180,6 +187,7 @@ export class AuthController {
 
   @UseGuards(ThrottlerGuard, JwtAuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @SkipCacheInvalidation()
   @Post('logout')
   async logout(@Request() req, @Res({ passthrough: true }) res) {
     res.clearCookie('access_token', {
@@ -304,6 +312,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard, JwtAuthGuard, RolesGuard)
   @Throttle({ default: { limit: 15, ttl: 3600000 } })
   @Roles(Role.ADMIN)
+  @SkipCacheInvalidation()
   @Post('admin-login-for-user')
   async adminPasswordLessLogin(
     @Body() dto: PasswordLessLoginDto,
@@ -347,12 +356,14 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Cacheable({ ttlSeconds: 30, namespace: 'auth', scope: 'user' })
   @Get('/get-profile')
   async getUserProfile(@Request() req) {
     return this.authService.getProfile(req.user.id);
   }
 
   @Post('/forgot-password')
+  @SkipCacheInvalidation()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 3600000 } })
   async forgotPassword(@Body('email') email: string, @Request() req) {
@@ -364,6 +375,7 @@ export class AuthController {
   }
 
   @Post('/reset-password')
+  @SkipCacheInvalidation()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 15, ttl: 3600000 } })
   async resetPassword(
@@ -383,6 +395,7 @@ export class AuthController {
   }
 
   @Post('/request-2fa-reset')
+  @SkipCacheInvalidation()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 3600000 } })
   async requestTwoFactorReset(
@@ -398,6 +411,7 @@ export class AuthController {
   }
 
   @Post('/request-2fa-reset-by-admin')
+  @SkipCacheInvalidation()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 3600000 } })
   async requestTwoFactorResetByAdmin(
@@ -443,6 +457,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
+  @Cacheable({ ttlSeconds: 15, namespace: 'auth', scope: 'user' })
   @Get('admin/2fa-reset-requests')
   async getManual2faResetRequests(
     @Query('page') page: string,
